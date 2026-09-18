@@ -1,4 +1,5 @@
 import 'reflect-metadata';
+import type { INestApplication } from '@nestjs/common';
 import { config as loadEnv } from 'dotenv';
 import { fileURLToPath } from 'node:url';
 import { parseConfig } from './config.js';
@@ -9,11 +10,13 @@ loadEnv({
     fileURLToPath(new URL('../../../.env', import.meta.url)),
   quiet: true,
 });
+let app: INestApplication | undefined;
 try {
   const config = parseConfig(process.env);
-  const app = await createApp(config);
+  app = await createApp(config);
   await app.listen(config.port, config.host);
 } catch {
+  await app?.close();
   console.error(
     'API startup failed. Check environment configuration and database/Redis availability.',
   );

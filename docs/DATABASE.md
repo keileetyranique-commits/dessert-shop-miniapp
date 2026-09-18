@@ -1,5 +1,10 @@
 # 数据库设计（v0.1）
 
+Phase 0 实际迁移仅包含 merchants、brands、stores。
+品牌归属商户；门店使用 (merchant_id, brand_id) 复合外键约束，防止跨商户品牌引用。
+门店预留 schema_version、feature_flags、custom_fields 和 deleted_at。
+下列业务表为后续阶段设计，尚未建表。所有业务查询需基于已认证租户范围执行。
+
 ## 1. 核心原则
 
 - PostgreSQL
