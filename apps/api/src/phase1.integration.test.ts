@@ -18,7 +18,16 @@ test('Phase 1 real admin, tenant constraints and complete product cost flow', as
   const ownerToken = randomBytes(32).toString('hex'),
     otherToken = randomBytes(32).toString('hex'),
     managerToken = randomBytes(32).toString('hex');
+  const brandOwnerToken = randomBytes(32).toString('hex');
   const identities = [
+    {
+      id: 'brand-owner',
+      token: brandOwnerToken,
+      merchantId: merchants[0]!,
+      brandId: brands[0],
+      storeIds: '*',
+      role: 'OWNER',
+    },
     {
       id: 'test-owner',
       token: ownerToken,
@@ -86,7 +95,7 @@ test('Phase 1 real admin, tenant constraints and complete product cost flow', as
       body?: unknown,
       expected = 200,
       token = ownerToken,
-      store = stores[0]!,
+      store: string = stores[0]!,
     ) {
       const res = await fetch(base + path, {
         method,
@@ -140,6 +149,45 @@ test('Phase 1 real admin, tenant constraints and complete product cost flow', as
           'POST',
           { name: 'forged', merchantId: merchants[1] },
           400,
+        );
+      },
+    );
+    await t.test(
+      'brand OWNER can create a store but cannot use another brand',
+      async () => {
+        const created = await request(
+          '/stores',
+          'POST',
+          { name: '后台创建门店' },
+          201,
+          brandOwnerToken,
+        );
+        assert.equal(created.merchantId, merchants[0]);
+        assert.equal(created.brandId, brands[0]);
+        const otherBrand = await db.brand.create({
+          data: { merchantId: merchants[0]!, name: 'Other brand' },
+        });
+        const otherStore = await db.store.create({
+          data: {
+            merchantId: merchants[0]!,
+            brandId: otherBrand.id,
+            name: 'Other brand store',
+          },
+        });
+        await request(
+          '/products',
+          'GET',
+          undefined,
+          403,
+          brandOwnerToken,
+          otherStore.id,
+        );
+        await request(
+          '/stores',
+          'POST',
+          { name: 'forbidden' },
+          403,
+          managerToken,
         );
       },
     );

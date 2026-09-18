@@ -12,7 +12,8 @@
     "test:integration": "pnpm build && node --test --test-concurrency=1 dist/integration.test.js dist/phase1.integration.test.js",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate deploy",
-    "db:validate": "prisma validate"
+    "db:validate": "prisma validate",
+    "admin:provision": "tsx src/provision.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.1.0",

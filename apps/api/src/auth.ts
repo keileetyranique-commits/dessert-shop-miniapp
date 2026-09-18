@@ -31,6 +31,7 @@ export class AdminGuard implements CanActivate {
     @Inject(Reflector) private reflector: Reflector,
   ) {}
   async canActivate(ctx: ExecutionContext) {
+    ctx.switchToHttp().getResponse().setHeader('Cache-Control', 'no-store');
     const req = ctx.switchToHttp().getRequest<AdminRequest>();
     req.identity = authenticate(
       req.headers.authorization,
