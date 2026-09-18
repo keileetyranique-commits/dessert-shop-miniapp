@@ -1,0 +1,11 @@
+{
+  "name": "@dessert/shared",
+  "private": true,
+  "version": "0.0.1",
+  "scripts": {
+    "build": "echo \"shared build placeholder\"",
+    "test": "echo \"shared tests placeholder\"",
+    "lint": "echo \"shared lint placeholder\"",
+    "typecheck": "echo \"shared typecheck placeholder\""
+  }
+}
