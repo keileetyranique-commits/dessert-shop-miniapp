@@ -150,3 +150,5 @@ Phase 1 商品、门店与成本 API 的实际路径、鉴权及字段约定见 
 - 配送发单
 - 配送取消
 - 配送回调
+
+Phase 1 审查修复：成本 GET 仅预览，显式 POST `/admin/costs/variants/:id/cost/snapshots` 保存快照；新增受成本权限保护的 Modifier 成本接口和 `DELETE /admin/variants/:id` 归档。完整权限及参数见 [Phase 1](PHASE-1.md)。

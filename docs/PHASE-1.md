@@ -62,7 +62,9 @@ CLI 幂等创建配置中 OWNER 的商户与品牌，拒绝改变已有品牌归
 全部 /api/v1/admin 接口要求 Authorization: Bearer 凭据。
 门店业务还要求 X-Store-Id：这只是选择器，服务端会验证授权及 Merchant/Brand/Store 归属。
 body/query 不能传入任意租户范围；严格校验拒绝额外字段。
-MANAGER 能操作商品、SKU、选项和库存；成本接口仅 OWNER/COST_MANAGER 可访问。
+OWNER 可维护商品、库存与成本；MANAGER 可维护商品、SKU、选项和库存；COST_MANAGER 只能写成本中心。
+三类角色可共享读取门店、分类、商品和 SKU，便于选择成本对象。所有商品/库存写接口均用 CatalogAccess 服务端策略限制为 OWNER/MANAGER。
+门店创建/修改仍仅 OWNER，创建要求品牌级授权。成本接口仅 OWNER/COST_MANAGER 可访问。
 后台响应设置 Cache-Control: no-store；未认证不返回业务数据。
 
 每张业务表都包含 merchantId、brandId、storeId，并通过三元外键指向 Store。
@@ -86,7 +88,8 @@ MANAGER 能操作商品、SKU、选项和库存；成本接口仅 OWNER/COST_MAN
   不填写每单份数时返回 PARTIAL，不把每单成本假装成单份成本。
 - 当前价格选择 purchasedAt 不晚于计算时刻的最新采购，依次以 createdAt 和 id 打破平局。
   所选月份仅控制固定成本，不代表回算历史采购价格。
-- 每次计算在 RepeatableRead 事务中读取一致输入，保存不可修改的 CostSnapshot。
+- 每次计算在 RepeatableRead 事务中读取一致输入。GET 当前预览严格只读；
+  POST variants/:id/cost/snapshots 用相同参数重新计算并保存不可修改的 CostSnapshot。
   快照保留完整计算输入、采购/配方来源、版本、月份、结果和 UTC 时间。
   修改采购价或同月固定成本不会改变旧快照；订单成本快照属于后续订单阶段。
 - COMPLETE 表示本计算模型所需资料齐全，仍是估算；
@@ -97,26 +100,26 @@ MANAGER 能操作商品、SKU、选项和库存；成本接口仅 OWNER/COST_MAN
 
 ## 已实现 API（统一前缀 /api/v1）
 
-| 路径                                                       | 方法                           | 用途                                                 |
-| ---------------------------------------------------------- | ------------------------------ | ---------------------------------------------------- |
-| /admin/session                                             | GET                            | 已验证身份（不含 token）                             |
-| /admin/stores                                              | GET / POST                     | 授权门店列表 / 品牌 OWNER 创建门店                   |
-| /admin/store                                               | GET / PATCH                    | 当前门店资料                                         |
-| /admin/categories、/admin/categories/:id                   | GET、POST / PATCH              | 分类                                                 |
-| /admin/products、/admin/products/:id                       | GET、POST / GET、PATCH、DELETE | 商品及软删除                                         |
-| /admin/products/:id/variants、/admin/variants/:id          | POST / PATCH                   | SKU 创建/修改                                        |
-| /admin/variants/:id/stock                                  | POST                           | 原子库存增减和流水                                   |
-| /admin/products/:id/modifier-groups                        | POST                           | 创建通用选项组                                       |
-| /admin/modifier-groups/:id/modifiers、/admin/modifiers/:id | POST / PATCH                   | 通用选项                                             |
-| /admin/costs/ingredients、/admin/costs/ingredients/:id     | GET、POST / PATCH              | 食材；基础单位不可改                                 |
-| /admin/costs/purchases                                     | GET / POST                     | 不可覆盖的采购历史                                   |
-| /admin/costs/variants/:id/recipes、/recipe                 | GET / PUT                      | 版本历史 / 新配方版本                                |
-| /admin/costs/variants/:id/recipes/:recipeId/activate       | POST                           | 切换已存在版本                                       |
-| /admin/costs/packaging、/admin/costs/packaging/:id         | GET、POST / PATCH              | 包装项目                                             |
-| /admin/costs/variants/:id/packaging                        | GET / PUT                      | 履约包装清单                                         |
-| /admin/costs/fixed/:month、/allocation/:month              | GET / PUT                      | 月固定成本 / 分摊规则                                |
-| /admin/costs/variants/:id/cost                             | GET                            | month、fulfillment、可选 itemsPerOrder；生成计算快照 |
-| /admin/costs/snapshots/:id                                 | GET                            | 读取当前门店历史快照                                 |
+| 路径                                                       | 方法                           | 用途                                             |
+| ---------------------------------------------------------- | ------------------------------ | ------------------------------------------------ |
+| /admin/session                                             | GET                            | 已验证身份（不含 token）                         |
+| /admin/stores                                              | GET / POST                     | 授权门店列表 / 品牌 OWNER 创建门店               |
+| /admin/store                                               | GET / PATCH                    | 当前门店资料                                     |
+| /admin/categories、/admin/categories/:id                   | GET、POST / PATCH              | 分类                                             |
+| /admin/products、/admin/products/:id                       | GET、POST / GET、PATCH、DELETE | 商品及软删除                                     |
+| /admin/products/:id/variants、/admin/variants/:id          | POST / PATCH                   | SKU 创建/修改                                    |
+| /admin/variants/:id/stock                                  | POST                           | 原子库存增减和流水                               |
+| /admin/products/:id/modifier-groups                        | POST                           | 创建通用选项组                                   |
+| /admin/modifier-groups/:id/modifiers、/admin/modifiers/:id | POST / PATCH                   | 通用选项                                         |
+| /admin/costs/ingredients、/admin/costs/ingredients/:id     | GET、POST / PATCH              | 食材；基础单位不可改                             |
+| /admin/costs/purchases                                     | GET / POST                     | 不可覆盖的采购历史                               |
+| /admin/costs/variants/:id/recipes、/recipe                 | GET / PUT                      | 版本历史 / 新配方版本                            |
+| /admin/costs/variants/:id/recipes/:recipeId/activate       | POST                           | 切换已存在版本                                   |
+| /admin/costs/packaging、/admin/costs/packaging/:id         | GET、POST / PATCH              | 包装项目                                         |
+| /admin/costs/variants/:id/packaging                        | GET / PUT                      | 履约包装清单                                     |
+| /admin/costs/fixed/:month、/allocation/:month              | GET / PUT                      | 月固定成本 / 分摊规则                            |
+| /admin/costs/variants/:id/cost                             | GET                            | month、fulfillment、可选 itemsPerOrder；只读预览 |
+| /admin/costs/snapshots/:id                                 | GET                            | 读取当前门店历史快照                             |
 
 严格按 SKU 计算，所以成本、配方与包装 API 使用 variants/:id，避免多个规格歧义。
 409 表示库存不足或并发/唯一性冲突；刷新确认后重试。采购与配方写入不做盲目自动重放。
@@ -149,3 +152,26 @@ Phase 1 集成测试通过生产模式 API 验证鉴权，包含跨商户、同�
 
 未包含：密码/SSO 账号管理、图片上传、订单库存预占、真实生产批次管理、整单包装分摊、
 自动采购平均价策略、混合固定成本分摊，以及 Phase 2 的定价和利润保护。
+
+## PR #15 审查修复
+
+- Modifier 增加可空整数 costFen：null 表示未配置，0 表示明确无成本，范围 0–2147483647 分。
+  新增独立成本接口 GET /admin/costs/modifiers、PATCH /admin/costs/modifiers/:id（body 仅 costFen）。
+  商品接口不接受或返回该字段，MANAGER 无法借助商品读取/写入泄露成本。
+  后台“选项成本”页供 OWNER/COST_MANAGER 录入、修改，创建选项仍由 OWNER/MANAGER 完成。
+  costFen 是每次选择的人工录入成本，独立于基础 SKU 成本；未选择的选项不自动加进 SKU 成本。
+  未来可引入独立 Modifier Recipe 与成本来源解析，保留此人工成本来源；本轮不建立虚假的 BOM 或订单逻辑。
+- GET /admin/costs/variants/:id/cost 不产生快照，也不返回 snapshotId。
+  POST /admin/costs/variants/:id/cost/snapshots 使用 JSON body 的 month、fulfillment、可选 itemsPerOrder
+  （与 GET 查询参数一致，itemsPerOrder 是正整数字符串），重新读取当前输入并保存，返回 snapshotId。
+  界面分别提供“计算当前单份成本”和“保存成本快照”；保存时资料可能已变化，返回新的计算结果。
+- DELETE /admin/variants/:id 设置 deletedAt 与 INACTIVE，不删除历史数据。
+  正常列表隐藏归档 SKU，禁止修改、库存调整、新 BOM、激活旧 BOM、包装写入、成本预览与新快照。
+  原 Recipe 和 CostSnapshot 仍可通过经授权的历史读取接口查看；界面归档必须显式确认。
+- 新迁移 202609190002_phase1_review 增加 Modifier 成本及非负约束，未修改已有迁移。
+  新索引 purchase_latest_idx(storeId, ingredientId, purchasedAt DESC, createdAt DESC, id DESC)
+  对应当前价查询的等值条件与排序。每条 BOM 使用明确的单食材 top-1 查询，避免嵌套关系分页加载整段历史。
+  保留商户/品牌查询过滤；storeId 的数据库归属唯一且受复合外键约束。
+- 新增生产配置下角色写权限、Modifier 成本校验/隔离/无泄露、GET 零写入、POST 快照不可变、
+  SKU 归档及历史保留、PostgreSQL EXPLAIN 索引路径、界面预览/保存分离与归档确认测试。
+  EXPLAIN 测试关闭顺序扫描，仅验证索引能提供无额外 Sort 的路径，不将小样本的优化器选择当成性能基准。
