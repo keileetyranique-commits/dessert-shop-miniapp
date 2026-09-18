@@ -1,0 +1,12 @@
+{
+  "name": "@dessert/merchant-pos",
+  "private": true,
+  "version": "0.0.1",
+  "scripts": {
+    "dev": "echo \"merchant POS scaffold ready\"",
+    "build": "echo \"merchant POS build placeholder\"",
+    "test": "echo \"merchant POS tests placeholder\"",
+    "lint": "echo \"merchant POS lint placeholder\"",
+    "typecheck": "echo \"merchant POS typecheck placeholder\""
+  }
+}
