@@ -1,11 +1,19 @@
 {
-  "name": "@dessert/payment",
+  "name": "@platform/payment",
   "private": true,
   "version": "0.0.1",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
   "scripts": {
-    "build": "echo \"payment build placeholder\"",
-    "test": "echo \"payment tests placeholder\"",
-    "lint": "echo \"payment lint placeholder\"",
-    "typecheck": "echo \"payment typecheck placeholder\""
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@platform/shared": "workspace:*"
   }
 }

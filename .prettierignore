@@ -1,0 +1,13 @@
+node_modules
+dist
+pnpm-lock.yaml
+coverage
+docs/PRD.md
+docs/API.md
+docs/ARCHITECTURE.md
+docs/DATABASE.md
+docs/COSTING-PRICING.md
+docs/INTELLIGENCE-EXPORT.md
+docs/GROWTH-BEHAVIOR.md
+docs/PLATFORM-GENERALIZATION.md
+docs/DEVELOPMENT-PLAN.md

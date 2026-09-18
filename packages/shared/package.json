@@ -1,11 +1,17 @@
 {
-  "name": "@dessert/shared",
+  "name": "@platform/shared",
   "private": true,
   "version": "0.0.1",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
   "scripts": {
-    "build": "echo \"shared build placeholder\"",
-    "test": "echo \"shared tests placeholder\"",
-    "lint": "echo \"shared lint placeholder\"",
-    "typecheck": "echo \"shared typecheck placeholder\""
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "pnpm build && node --test dist/index.test.js"
   }
 }
