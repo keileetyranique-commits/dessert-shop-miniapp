@@ -17,6 +17,7 @@ import {
   type Identity,
 } from './identity.js';
 export const BrandScope = () => SetMetadata('brandScope', true);
+export const CatalogAccess = () => SetMetadata('catalogAccess', true);
 export const CostAccess = () => SetMetadata('costAccess', true);
 export interface AdminRequest {
   headers: Record<string, string | undefined>;
@@ -37,6 +38,14 @@ export class AdminGuard implements CanActivate {
       req.headers.authorization,
       this.config.adminIdentities,
     );
+    if (
+      this.reflector.getAllAndOverride<boolean>('catalogAccess', [
+        ctx.getHandler(),
+        ctx.getClass(),
+      ]) &&
+      !['OWNER', 'MANAGER'].includes(req.identity.role)
+    )
+      throw new ForbiddenException('仅 OWNER/MANAGER 可维护商品与库存');
     if (
       this.reflector.getAllAndOverride<boolean>('costAccess', [
         ctx.getHandler(),

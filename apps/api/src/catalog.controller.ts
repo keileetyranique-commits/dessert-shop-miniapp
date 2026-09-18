@@ -15,7 +15,12 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { DatabaseService } from './infrastructure.js';
-import { AdminGuard, BrandScope, type AdminRequest } from './auth.js';
+import {
+  AdminGuard,
+  BrandScope,
+  CatalogAccess,
+  type AdminRequest,
+} from './auth.js';
 import { DbErrorFilter } from './db-error.filter.js';
 import {
   parse,
@@ -51,7 +56,7 @@ export class CatalogController {
       orderBy: { createdAt: 'asc' },
     });
   }
-  @Post('stores') @BrandScope() createStore(
+  @Post('stores') @CatalogAccess() @BrandScope() createStore(
     @Req() r: AdminRequest,
     @Body() body: unknown,
   ) {
@@ -75,7 +80,10 @@ export class CatalogController {
       },
     });
   }
-  @Patch('store') editStore(@Req() r: AdminRequest, @Body() body: unknown) {
+  @Patch('store') @CatalogAccess() editStore(
+    @Req() r: AdminRequest,
+    @Body() body: unknown,
+  ) {
     if (r.identity.role !== 'OWNER') throw new ForbiddenException();
     return this.db.store.update({
       where: {
@@ -94,12 +102,15 @@ export class CatalogController {
       orderBy: { createdAt: 'asc' },
     });
   }
-  @Post('categories') category(@Req() r: AdminRequest, @Body() body: unknown) {
+  @Post('categories') @CatalogAccess() category(
+    @Req() r: AdminRequest,
+    @Body() body: unknown,
+  ) {
     return this.db.category.create({
       data: { ...r.scope, ...parse(categoryInput, body) },
     });
   }
-  @Patch('categories/:id') editCategory(
+  @Patch('categories/:id') @CatalogAccess() editCategory(
     @Req() r: AdminRequest,
     @Param('id') value: string,
     @Body() body: unknown,
@@ -120,7 +131,17 @@ export class CatalogController {
         variantRecords: { where: { ...r.scope, deletedAt: null } },
         modifierGroupRecords: {
           where: r.scope,
-          include: { modifierRecords: { where: r.scope } },
+          include: {
+            modifierRecords: {
+              where: r.scope,
+              select: {
+                id: true,
+                name: true,
+                salePriceFen: true,
+                status: true,
+              },
+            },
+          },
         },
       },
       orderBy: { createdAt: 'asc' },
@@ -137,7 +158,7 @@ export class CatalogController {
     if (!p) throw new NotFoundException();
     return p;
   }
-  @Post('products') async createProduct(
+  @Post('products') @CatalogAccess() async createProduct(
     @Req() r: AdminRequest,
     @Body() body: unknown,
   ) {
@@ -147,7 +168,7 @@ export class CatalogController {
     });
     return this.db.product.create({ data: { ...r.scope, ...data } });
   }
-  @Patch('products/:id') async editProduct(
+  @Patch('products/:id') @CatalogAccess() async editProduct(
     @Req() r: AdminRequest,
     @Param('id') value: string,
     @Body() body: unknown,
@@ -166,7 +187,7 @@ export class CatalogController {
       data,
     });
   }
-  @Delete('products/:id') removeProduct(
+  @Delete('products/:id') @CatalogAccess() removeProduct(
     @Req() r: AdminRequest,
     @Param('id') value: string,
   ) {
@@ -179,7 +200,7 @@ export class CatalogController {
       data: { deletedAt: new Date(), status: 'INACTIVE' },
     });
   }
-  @Post('products/:id/variants') async variant(
+  @Post('products/:id/variants') @CatalogAccess() async variant(
     @Req() r: AdminRequest,
     @Param('id') value: string,
     @Body() body: unknown,
@@ -191,7 +212,7 @@ export class CatalogController {
     });
     return this.db.variant.create({ data: { ...r.scope, productId, ...data } });
   }
-  @Patch('variants/:id') editVariant(
+  @Patch('variants/:id') @CatalogAccess() editVariant(
     @Req() r: AdminRequest,
     @Param('id') value: string,
     @Body() body: unknown,
@@ -206,7 +227,21 @@ export class CatalogController {
       data: parse(variantEdit, body),
     });
   }
-  @Post('variants/:id/stock') async stock(
+  @Delete('variants/:id') @CatalogAccess() archiveVariant(
+    @Req() r: AdminRequest,
+    @Param('id') value: string,
+  ) {
+    return this.db.variant.update({
+      where: {
+        id: parse(id, value),
+        ...r.scope,
+        deletedAt: null,
+        product: { deletedAt: null },
+      },
+      data: { deletedAt: new Date(), status: 'INACTIVE' },
+    });
+  }
+  @Post('variants/:id/stock') @CatalogAccess() async stock(
     @Req() r: AdminRequest,
     @Param('id') value: string,
     @Body() body: unknown,
@@ -250,7 +285,7 @@ export class CatalogController {
       });
     });
   }
-  @Post('products/:id/modifier-groups') async group(
+  @Post('products/:id/modifier-groups') @CatalogAccess() async group(
     @Req() r: AdminRequest,
     @Param('id') value: string,
     @Body() body: unknown,
@@ -263,7 +298,7 @@ export class CatalogController {
       data: { ...r.scope, productId, ...parse(groupInput, body) },
     });
   }
-  @Post('modifier-groups/:id/modifiers') async modifier(
+  @Post('modifier-groups/:id/modifiers') @CatalogAccess() async modifier(
     @Req() r: AdminRequest,
     @Param('id') value: string,
     @Body() body: unknown,
@@ -274,9 +309,10 @@ export class CatalogController {
     });
     return this.db.modifier.create({
       data: { ...r.scope, groupId, ...parse(modifierInput, body) },
+      select: { id: true, name: true, salePriceFen: true, status: true },
     });
   }
-  @Patch('modifiers/:id') editModifier(
+  @Patch('modifiers/:id') @CatalogAccess() editModifier(
     @Req() r: AdminRequest,
     @Param('id') value: string,
     @Body() body: unknown,
@@ -287,6 +323,7 @@ export class CatalogController {
         ...r.scope,
       },
       data: parse(modifierInput.partial().strict(), body),
+      select: { id: true, name: true, salePriceFen: true, status: true },
     });
   }
 }

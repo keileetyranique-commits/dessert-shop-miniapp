@@ -25,6 +25,7 @@ import {
   month,
   fulfillment,
   positive,
+  money,
   ingredientInput,
   purchaseInput,
   recipeInput,
@@ -46,6 +47,26 @@ function checkUnit(q: string, u: string, base: string) {
 @UseFilters(DbErrorFilter)
 export class CostController {
   constructor(@Inject(DatabaseService) private db: DatabaseService) {}
+  @Get('modifiers') modifiers(@Req() r: AdminRequest) {
+    return this.db.modifier.findMany({
+      where: { ...r.scope, group: { product: { deletedAt: null } } },
+      orderBy: { createdAt: 'asc' },
+    });
+  }
+  @Patch('modifiers/:id') modifierCost(
+    @Req() r: AdminRequest,
+    @Param('id') value: string,
+    @Body() body: unknown,
+  ) {
+    return this.db.modifier.update({
+      where: {
+        id: parse(id, value),
+        ...r.scope,
+        group: { product: { deletedAt: null } },
+      },
+      data: parse(z.object({ costFen: money }).strict(), body),
+    });
+  }
   @Get('ingredients') ingredients(@Req() r: AdminRequest) {
     return this.db.ingredient.findMany({
       where: { ...r.scope, deletedAt: null },
@@ -175,7 +196,12 @@ export class CostController {
     return this.db.$transaction(
       async (tx) => {
         await tx.recipe.findFirstOrThrow({
-          where: { ...r.scope, id: target, variantId },
+          where: {
+            ...r.scope,
+            id: target,
+            variantId,
+            variant: { deletedAt: null, product: { deletedAt: null } },
+          },
         });
         await tx.recipe.updateMany({
           where: { ...r.scope, variantId, active: true },
@@ -332,10 +358,25 @@ export class CostController {
       update: data,
     });
   }
-  @Get('variants/:id/cost') async cost(
+  @Get('variants/:id/cost') cost(
     @Req() r: AdminRequest,
     @Param('id') value: string,
     @Query() query: unknown,
+  ) {
+    return this.calculate(r, value, query, false);
+  }
+  @Post('variants/:id/cost/snapshots') saveSnapshot(
+    @Req() r: AdminRequest,
+    @Param('id') value: string,
+    @Body() body: unknown,
+  ) {
+    return this.calculate(r, value, body, true);
+  }
+  private async calculate(
+    r: AdminRequest,
+    value: string,
+    query: unknown,
+    save: boolean,
   ) {
     const variantId = parse(id, value),
       options = parse(
@@ -372,23 +413,32 @@ export class CostController {
             recipeItemRecords: {
               where: s,
               include: {
-                ingredient: {
-                  include: {
-                    purchaseRecordRecords: {
-                      where: { ...s, purchasedAt: { lte: calculatedAt } },
-                      orderBy: [
-                        { purchasedAt: 'desc' },
-                        { createdAt: 'desc' },
-                        { id: 'desc' },
-                      ],
-                      take: 1,
-                    },
-                  },
-                },
+                ingredient: true,
               },
             },
           },
         });
+        const purchases = new Map<
+          string,
+          Awaited<ReturnType<typeof tx.purchaseRecord.findFirst>>
+        >();
+        for (const item of recipe?.recipeItemRecords ?? []) {
+          purchases.set(
+            item.ingredientId,
+            await tx.purchaseRecord.findFirst({
+              where: {
+                ...s,
+                ingredientId: item.ingredientId,
+                purchasedAt: { lte: calculatedAt },
+              },
+              orderBy: [
+                { purchasedAt: 'desc' },
+                { createdAt: 'desc' },
+                { id: 'desc' },
+              ],
+            }),
+          );
+        }
         const mapping = await tx.packagingConfiguration.findFirst({
           where: { ...s, variantId, fulfillment: options.fulfillment },
           include: {
@@ -411,7 +461,7 @@ export class CostController {
               unit: i.unit,
               baseUnit: i.ingredient.baseUnit,
               lossRateBps: i.ingredient.lossRateBps,
-              purchase: i.ingredient.purchaseRecordRecords[0],
+              purchase: purchases.get(i.ingredientId) ?? undefined,
             })) ?? [],
           packaging:
             mapping?.skuPackagingRecords.map((i) => ({
@@ -459,6 +509,7 @@ export class CostController {
           fulfillment: options.fulfillment,
           recipeVersion: recipe?.version ?? null,
         };
+        if (!save) return response;
         const snapshot = await tx.costSnapshot.create({
           data: {
             ...s,
@@ -469,7 +520,7 @@ export class CostController {
                 input,
                 recipeId: recipe?.id,
                 purchaseIds: recipe?.recipeItemRecords.map(
-                  (i) => i.ingredient.purchaseRecordRecords[0]?.id,
+                  (i) => purchases.get(i.ingredientId)?.id,
                 ),
                 fixedCostId: fixed?.id,
                 allocationRuleId: rule?.id,

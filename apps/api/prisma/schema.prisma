@@ -163,6 +163,8 @@ model Modifier {
   groupId      String        @db.Uuid
   name         String
   salePriceFen Int           @default(0)
+  /// Manual per-selection cost; null means unconfigured. Future recipe sources can resolve cost independently.
+  costFen      Int?
   status       String        @default("ACTIVE")
   store        Store         @relation(fields: [merchantId, brandId, storeId], references: [merchantId, brandId, id], onDelete: Restrict)
   group        ModifierGroup @relation(fields: [storeId, groupId], references: [storeId, id], onDelete: Restrict)
@@ -228,6 +230,7 @@ model PurchaseRecord {
 
   @@unique([storeId, id])
   @@index([merchantId, brandId, storeId])
+  @@index([storeId, ingredientId, purchasedAt(sort: Desc), createdAt(sort: Desc), id(sort: Desc)], map: "purchase_latest_idx")
   @@map("purchase_records")
 }
 

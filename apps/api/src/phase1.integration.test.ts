@@ -18,8 +18,17 @@ test('Phase 1 real admin, tenant constraints and complete product cost flow', as
   const ownerToken = randomBytes(32).toString('hex'),
     otherToken = randomBytes(32).toString('hex'),
     managerToken = randomBytes(32).toString('hex');
+  const costToken = randomBytes(32).toString('hex');
   const brandOwnerToken = randomBytes(32).toString('hex');
   const identities = [
+    {
+      id: 'cost-manager',
+      token: costToken,
+      merchantId: merchants[0],
+      brandId: brands[0],
+      storeIds: [stores[0]],
+      role: 'COST_MANAGER',
+    },
     {
       id: 'brand-owner',
       token: brandOwnerToken,
@@ -253,6 +262,217 @@ test('Phase 1 real admin, tenant constraints and complete product cost flow', as
             { name: 'bad', salePriceFen },
             400,
           );
+      },
+    );
+    await t.test(
+      'production role matrix and modifier costs are enforced server-side',
+      async () => {
+        for (const [path, method, body] of [
+          ['/products', 'POST', { name: 'blocked', categoryId: category.id }],
+          ['/products/' + product.id, 'PATCH', { name: 'blocked' }],
+          ['/products/' + product.id, 'DELETE', undefined],
+          ['/categories', 'POST', { name: 'blocked' }],
+          ['/categories/' + category.id, 'PATCH', { name: 'blocked' }],
+          [
+            '/products/' + product.id + '/variants',
+            'POST',
+            { name: 'blocked', salePriceFen: 10 },
+          ],
+          ['/variants/' + sku.id, 'PATCH', { name: 'blocked' }],
+          ['/variants/' + sku.id, 'DELETE', undefined],
+          [
+            '/variants/' + sku.id + '/stock',
+            'POST',
+            { delta: 1, reason: 'blocked' },
+          ],
+          [
+            '/products/' + product.id + '/modifier-groups',
+            'POST',
+            { name: 'blocked' },
+          ],
+        ] as const)
+          await request(path, method, body, 403, costToken);
+        await request('/products', 'GET', undefined, 200, costToken);
+        const managed = await request(
+          '/products',
+          'POST',
+          { name: 'manager product', categoryId: category.id },
+          201,
+          managerToken,
+        );
+        await request(
+          '/products/' + managed.id,
+          'PATCH',
+          { name: 'updated' },
+          200,
+          managerToken,
+        );
+        const managedSku = await request(
+          '/products/' + managed.id + '/variants',
+          'POST',
+          { name: 'managed', salePriceFen: 10 },
+          201,
+          managerToken,
+        );
+        await request(
+          '/variants/' + managedSku.id + '/stock',
+          'POST',
+          { delta: 2, reason: 'test' },
+          201,
+          managerToken,
+        );
+        await request(
+          '/costs/ingredients',
+          'POST',
+          { name: 'blocked', baseUnit: 'g' },
+          403,
+          managerToken,
+        );
+        const group = await request(
+          '/products/' + product.id + '/modifier-groups',
+          'POST',
+          { name: '服务选项' },
+          201,
+          managerToken,
+        );
+        const modifier = await request(
+          '/modifier-groups/' + group.id + '/modifiers',
+          'POST',
+          { name: '礼品包装', salePriceFen: 200 },
+          201,
+          managerToken,
+        );
+        await request(
+          '/modifier-groups/' + group.id + '/modifiers',
+          'POST',
+          { name: 'blocked', salePriceFen: 0 },
+          403,
+          costToken,
+        );
+        await request(
+          '/modifiers/' + modifier.id,
+          'PATCH',
+          { name: 'blocked' },
+          403,
+          costToken,
+        );
+        assert.equal('costFen' in modifier, false);
+        await request(
+          '/costs/modifiers/' + modifier.id,
+          'PATCH',
+          { costFen: 35 },
+          200,
+          costToken,
+        );
+        assert.equal(
+          (await request('/costs/modifiers')).find(
+            (m: { id: string }) => m.id === modifier.id,
+          ).costFen,
+          35,
+        );
+        await request(
+          '/costs/modifiers/' + modifier.id,
+          'PATCH',
+          { costFen: 40 },
+          200,
+        );
+        await request('/costs/modifiers', 'GET', undefined, 403, managerToken);
+        await request(
+          '/costs/modifiers/' + modifier.id,
+          'PATCH',
+          { costFen: 1 },
+          403,
+          managerToken,
+        );
+        await request(
+          '/modifiers/' + modifier.id,
+          'PATCH',
+          { costFen: 1 },
+          400,
+          managerToken,
+        );
+        const edited = await request(
+          '/modifiers/' + modifier.id,
+          'PATCH',
+          { salePriceFen: 250 },
+          200,
+          managerToken,
+        );
+        assert.equal('costFen' in edited, false);
+        const listed = await request(
+          '/products',
+          'GET',
+          undefined,
+          200,
+          managerToken,
+        );
+        assert.equal(JSON.stringify(listed).includes('costFen'), false);
+        for (const costFen of [
+          -1,
+          1.2,
+          2147483648,
+          Number.MAX_SAFE_INTEGER + 1,
+          '10',
+          null,
+        ])
+          await request(
+            '/costs/modifiers/' + modifier.id,
+            'PATCH',
+            { costFen },
+            400,
+          );
+        await request(
+          '/costs/modifiers/' + modifier.id,
+          'PATCH',
+          { costFen: 0 },
+          200,
+        );
+        await request(
+          '/costs/modifiers/' + modifier.id,
+          'PATCH',
+          { costFen: 2147483647 },
+          200,
+        );
+        await request(
+          '/costs/modifiers/' + modifier.id,
+          'PATCH',
+          { costFen: 50 },
+          200,
+        );
+        await request(
+          '/costs/modifiers/' + modifier.id,
+          'PATCH',
+          { costFen: 1 },
+          404,
+          otherToken,
+          stores[1]!,
+        );
+        assert.equal(
+          (
+            await request(
+              '/costs/modifiers',
+              'GET',
+              undefined,
+              200,
+              otherToken,
+              stores[1]!,
+            )
+          ).length,
+          0,
+        );
+        await assert.rejects(
+          db.modifier.update({
+            where: { id: modifier.id },
+            data: { costFen: -1 },
+          }),
+        );
+        await request(
+          '/products/' + managed.id,
+          'DELETE',
+          undefined,
+          200,
+          managerToken,
+        );
       },
     );
     await t.test(
@@ -531,6 +751,42 @@ test('Phase 1 real admin, tenant constraints and complete product cost flow', as
         assert.equal(cost.allocatedFixedCostFen, 100);
         assert.equal(cost.fullUnitCostFen, 420);
         assert.equal(cost.completeness, 'COMPLETE');
+        assert.equal(cost.snapshotId, undefined);
+        const before = await db.costSnapshot.count({
+          where: { storeId: stores[0] },
+        });
+        for (let i = 0; i < 3; i++)
+          await request(
+            '/costs/variants/' +
+              sku.id +
+              '/cost?month=2026-09&fulfillment=PICKUP',
+          );
+        assert.equal(
+          await db.costSnapshot.count({ where: { storeId: stores[0] } }),
+          before,
+        );
+        const saved = await request(
+          '/costs/variants/' + sku.id + '/cost/snapshots',
+          'POST',
+          { month: '2026-09', fulfillment: 'PICKUP' },
+          201,
+        );
+        assert.equal(saved.fullUnitCostFen, cost.fullUnitCostFen);
+        assert.ok(saved.snapshotId);
+        assert.equal(
+          await db.costSnapshot.count({ where: { storeId: stores[0] } }),
+          before + 1,
+        );
+        cost.snapshotId = saved.snapshotId;
+        await request(
+          '/costs/snapshots/' + saved.snapshotId,
+          'GET',
+          undefined,
+          404,
+          brandOwnerToken,
+          stores[2]!,
+        );
+
         await request(
           '/costs/purchases',
           'POST',
@@ -605,6 +861,110 @@ test('Phase 1 real admin, tenant constraints and complete product cost flow', as
         assert.equal(
           (await request(path + '&itemsPerOrder=3')).fullUnitCostFen,
           600,
+        );
+      },
+    );
+    await t.test(
+      'SKU archive blocks current operations and preserves historical records',
+      async () => {
+        const snapshot = await request(
+          '/costs/variants/' + sku.id + '/cost/snapshots',
+          'POST',
+          { month: '2026-09', fulfillment: 'PICKUP' },
+          201,
+        );
+        await request(
+          '/variants/' + sku.id,
+          'DELETE',
+          undefined,
+          404,
+          otherToken,
+          stores[1]!,
+        );
+        const archived = await request('/variants/' + sku.id, 'DELETE');
+        assert.ok(archived.deletedAt);
+        assert.equal(archived.status, 'INACTIVE');
+        const detail = await request('/products/' + product.id);
+        assert.equal(
+          detail.variantRecords.some((v: { id: string }) => v.id === sku.id),
+          false,
+        );
+        const list = await request('/products');
+        assert.equal(
+          list
+            .find((p: { id: string }) => p.id === product.id)
+            .variantRecords.some((v: { id: string }) => v.id === sku.id),
+          false,
+        );
+        await request(
+          '/variants/' + sku.id + '/stock',
+          'POST',
+          { delta: 1, reason: 'blocked' },
+          409,
+        );
+        await request(
+          '/variants/' + sku.id,
+          'PATCH',
+          { status: 'ACTIVE' },
+          404,
+        );
+        await request(
+          '/costs/variants/' + sku.id + '/recipe',
+          'PUT',
+          recipeBody,
+          404,
+        );
+        await request(
+          '/costs/variants/' + sku.id + '/recipes/' + recipe1.id + '/activate',
+          'POST',
+          {},
+          404,
+        );
+        await request(
+          '/costs/variants/' + sku.id + '/packaging',
+          'PUT',
+          { fulfillment: 'PICKUP', items: [] },
+          404,
+        );
+        await request(
+          '/costs/variants/' +
+            sku.id +
+            '/cost?month=2026-09&fulfillment=PICKUP',
+          'GET',
+          undefined,
+          404,
+        );
+        await request(
+          '/costs/variants/' + sku.id + '/cost/snapshots',
+          'POST',
+          { month: '2026-09', fulfillment: 'PICKUP' },
+          404,
+        );
+        assert.equal(
+          (await request('/costs/variants/' + sku.id + '/recipes')).length,
+          2,
+        );
+        assert.equal(
+          (await request('/costs/snapshots/' + snapshot.snapshotId)).id,
+          snapshot.snapshotId,
+        );
+      },
+    );
+    await t.test(
+      'latest purchase index supports ordered bounded lookup',
+      async () => {
+        const plan = await db.$transaction(async (tx) => {
+          await tx.$executeRawUnsafe('SET LOCAL enable_seqscan = off');
+          return tx.$queryRawUnsafe(
+            'EXPLAIN (FORMAT JSON) SELECT * FROM purchase_records WHERE "storeId" = $1::uuid AND "ingredientId" = $2::uuid AND "purchasedAt" <= now() ORDER BY "purchasedAt" DESC, "createdAt" DESC, id DESC LIMIT 1',
+            stores[0],
+            ingredient.id,
+          );
+        });
+        assert.ok(JSON.stringify(plan).includes('purchase_latest_idx'));
+        assert.equal(
+          JSON.stringify(plan).includes('"Node Type":"Sort"'),
+          false,
         );
       },
     );
