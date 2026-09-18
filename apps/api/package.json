@@ -8,8 +8,8 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/main.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "pnpm build && node --test dist/config.test.js dist/app.test.js",
-    "test:integration": "pnpm build && node --test dist/integration.test.js",
+    "test": "pnpm build && node --test dist/config.test.js dist/app.test.js dist/auth.test.js",
+    "test:integration": "pnpm build && node --test --test-concurrency=1 dist/integration.test.js dist/phase1.integration.test.js",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate deploy",
     "db:validate": "prisma validate"
@@ -23,7 +23,8 @@
     "dotenv": "^17.2.0",
     "ioredis": "^5.8.0",
     "reflect-metadata": "^0.2.2",
-    "rxjs": "^7.8.2"
+    "rxjs": "^7.8.2",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@nestjs/testing": "^11.1.0",

@@ -1,4 +1,7 @@
 import 'reflect-metadata';
+import { AdminGuard } from './auth.js';
+import { CatalogController } from './catalog.controller.js';
+import { CostController } from './cost.controller.js';
 import {
   Controller,
   Get,
@@ -43,11 +46,12 @@ export class AppModule {
   static register(config: AppConfig): DynamicModule {
     return {
       module: AppModule,
-      controllers: [AppController],
+      controllers: [AppController, CatalogController, CostController],
       providers: [
         { provide: CONFIG, useValue: config },
         DatabaseService,
         RedisService,
+        AdminGuard,
       ],
     };
   }
