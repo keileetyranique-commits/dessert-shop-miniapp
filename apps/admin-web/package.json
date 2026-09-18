@@ -1,0 +1,12 @@
+{
+  "name": "@dessert/admin-web",
+  "private": true,
+  "version": "0.0.1",
+  "scripts": {
+    "dev": "echo \"admin web scaffold ready\"",
+    "build": "echo \"admin web build placeholder\"",
+    "test": "echo \"admin web tests placeholder\"",
+    "lint": "echo \"admin web lint placeholder\"",
+    "typecheck": "echo \"admin web typecheck placeholder\""
+  }
+}
