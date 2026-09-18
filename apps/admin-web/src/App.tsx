@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { AdminPanel } from './AdminPanel';
 import type { RuntimeInfo } from '@platform/shared';
 export function App() {
   const [runtime, setRuntime] = useState<RuntimeInfo | null>(null);
@@ -57,11 +58,8 @@ export function App() {
         </p>
         <p>计划执行、优惠发布与改价功能将在后续阶段开放。</p>
       </section>
-      <section>
-        <h2>门店管理</h2>
-        <p>尚未配置商户、品牌和门店。</p>
-      </section>
-      <footer>工程初始化 · Phase 0</footer>
+      <AdminPanel />
+      <footer>商品、门店与成本中心 · Phase 1</footer>
     </main>
   );
 }

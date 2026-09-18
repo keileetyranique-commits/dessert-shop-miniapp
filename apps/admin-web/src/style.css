@@ -51,3 +51,95 @@ footer {
   color: #536963;
   font-size: 13px;
 }
+form {
+  border-top: 1px solid #dbe5e2;
+  padding: 16px 0;
+}
+.form-grid,
+.selectors {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 16px;
+}
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 10px 0;
+  font-size: 14px;
+}
+input,
+select {
+  padding: 10px;
+  border: 1px solid #93aaa3;
+  border-radius: 6px;
+  min-width: 0;
+  max-width: 100%;
+  font: inherit;
+  background: white;
+  color: #17312d;
+}
+input[type='checkbox'] {
+  align-self: flex-start;
+  width: 20px;
+  height: 20px;
+}
+nav,
+.toolbar,
+.line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 20px 0;
+}
+nav button {
+  background: #e3eeeb;
+  color: #17312d;
+}
+nav button[aria-pressed='true'] {
+  background: #0f766e;
+  color: white;
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+[role='alert'] {
+  color: #9d241e;
+  background: #fff1ef;
+  padding: 12px;
+  border-radius: 8px;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+th,
+td {
+  padding: 12px 8px;
+  border-bottom: 1px solid #dbe5e2;
+  text-align: left;
+}
+details {
+  margin: 16px 0;
+}
+summary {
+  cursor: pointer;
+}
+.cost-result {
+  background: #eef7f3;
+  padding: 24px;
+  border-radius: 12px;
+  margin-top: 20px;
+}
+dl > div {
+  display: flex;
+  justify-content: space-between;
+  padding: 10px 0;
+  border-bottom: 1px solid #cbded7;
+}
+small {
+  overflow-wrap: anywhere;
+}
