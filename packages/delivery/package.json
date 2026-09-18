@@ -1,0 +1,11 @@
+{
+  "name": "@dessert/delivery",
+  "private": true,
+  "version": "0.0.1",
+  "scripts": {
+    "build": "echo \"delivery build placeholder\"",
+    "test": "echo \"delivery tests placeholder\"",
+    "lint": "echo \"delivery lint placeholder\"",
+    "typecheck": "echo \"delivery typecheck placeholder\""
+  }
+}
