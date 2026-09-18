@@ -1,0 +1,11 @@
+{
+  "name": "@dessert/payment",
+  "private": true,
+  "version": "0.0.1",
+  "scripts": {
+    "build": "echo \"payment build placeholder\"",
+    "test": "echo \"payment tests placeholder\"",
+    "lint": "echo \"payment lint placeholder\"",
+    "typecheck": "echo \"payment typecheck placeholder\""
+  }
+}
