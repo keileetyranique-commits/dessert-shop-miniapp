@@ -176,3 +176,30 @@ interface PaymentProvider {
 - 关键配置修改写入审计日志。
 - 正式密钥不可提交 GitHub。
 - 用户隐私信息最小化采集。
+
+
+## 11. 可扩展平台架构
+
+新增领域：
+- Growth：转化、加购、复购、优惠策略和 A/B 实验
+- Experiment：实验分流、指标、结果
+- Insight Plan：研判计划、审批、暂停、重新研判
+- Tenant：商户/品牌/门店隔离
+- Feature Flag：模块开关和渐进发布
+- Custom Fields：行业自定义属性
+
+建议新增 packages：
+```text
+packages/
+  growth/         # 优惠策略、增长规则、实验
+  insights/       # 智能研判与计划
+  experiments/    # A/B 测试
+  tenant/         # 商户/品牌/门店上下文
+  feature-flags/  # 功能开关
+```
+
+核心代码只依赖通用 Product / Variant / Modifier / Fulfillment 等模型；糖水店特有配置通过行业模板实现。
+
+详细见：
+- docs/GROWTH-BEHAVIOR.md
+- docs/PLATFORM-GENERALIZATION.md
