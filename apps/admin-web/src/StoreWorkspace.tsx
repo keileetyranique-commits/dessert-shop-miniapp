@@ -31,7 +31,8 @@ export function Workspace({
   role: string;
 }) {
   const api = createClient(token, storeId),
-    sensitive = ['OWNER', 'COST_MANAGER'].includes(role);
+    sensitive = ['OWNER', 'COST_MANAGER'].includes(role),
+    catalogWrite = ['OWNER', 'MANAGER'].includes(role);
   const [tab, setTab] = useState('store'),
     [error, setError] = useState(''),
     [revision, setRevision] = useState(0);
@@ -41,6 +42,10 @@ export function Workspace({
     [ingredients, setIngredients] = useState<Ingredient[]>([]),
     [packs, setPacks] = useState<Package[]>([]),
     [purchases, setPurchases] = useState<Purchase[]>([]);
+  const [modifiers, setModifiers] = useState<
+    (Named & { costFen: number | null })[]
+  >([]);
+  const [savingSnapshot, setSavingSnapshot] = useState(false);
   const [productId, setProductId] = useState(''),
     [skuId, setSkuId] = useState(''),
     [categoryId, setCategoryId] = useState(''),
@@ -73,14 +78,16 @@ export function Workspace({
         setProducts(p);
       }
       if (sensitive) {
-        const [i, pk, pr, f, a] = await Promise.all([
+        const [i, pk, pr, f, a, modifiers] = await Promise.all([
           client<Ingredient[]>('/costs/ingredients'),
           client<Package[]>('/costs/packaging'),
           client<Purchase[]>('/costs/purchases'),
           client<Values | null>('/costs/fixed/' + month),
           client<Values | null>('/costs/allocation/' + month),
+          client<(Named & { costFen: number | null })[]>('/costs/modifiers'),
         ]);
         if (active) {
+          setModifiers(modifiers);
           setIngredients(i);
           setPacks(pk);
           setPurchases(pr);
@@ -161,10 +168,15 @@ export function Workspace({
   );
   const tabs = [
     ['store', '门店'],
-    ['catalog', '商品与规格'],
-    ['inventory', '库存'],
+    ...(catalogWrite
+      ? [
+          ['catalog', '商品与规格'],
+          ['inventory', '库存'],
+        ]
+      : []),
     ...(sensitive
       ? [
+          ['modifiers', '选项成本'],
           ['ingredients', '食材与采购'],
           ['recipe', '配方 BOM'],
           ['packaging', '包装'],
@@ -215,7 +227,7 @@ export function Workspace({
             {store.name} · {store.address} · {store.businessHours}
           </p>
         ))}
-      {tab === 'catalog' && (
+      {tab === 'catalog' && catalogWrite && (
         <>
           <Editor
             title="分类"
@@ -361,17 +373,35 @@ export function Workspace({
             </>
           )}
           {sku && (
-            <Editor
-              key={sku.id + revision}
-              title="规格资料"
-              initial={{ ...sku }}
-              fields={skuFields}
-              onSave={(d) => save('/variants/' + sku.id, 'PATCH', d)}
-            />
+            <>
+              <Editor
+                key={sku.id + revision}
+                title="规格资料"
+                initial={{ ...sku }}
+                fields={skuFields}
+                onSave={(d) => save('/variants/' + sku.id, 'PATCH', d)}
+              />
+              <Editor
+                title="归档 SKU"
+                fields={[
+                  {
+                    name: 'confirmed',
+                    label: '确认归档当前 SKU（历史资料保留）',
+                    type: 'checkbox',
+                  },
+                ]}
+                onSave={async (d) => {
+                  if (!d.confirmed) throw Error('请先确认');
+                  await save('/variants/' + sku.id, 'DELETE', undefined);
+                  setSkuId('');
+                }}
+              />
+            </>
           )}
         </>
       )}
       {tab === 'inventory' &&
+        catalogWrite &&
         (sku ? (
           <>
             <p>
@@ -403,6 +433,25 @@ export function Workspace({
         ) : (
           <p>请选择 SKU。</p>
         ))}
+      {tab === 'modifiers' && sensitive && (
+        <section>
+          <h3>通用选项成本</h3>
+          <p>维护每次选择的成本；未配置不等于零成本。选项由商品管理员创建。</p>
+          {modifiers.map((m) => (
+            <Editor
+              key={m.id + revision}
+              title={
+                m.name +
+                ' · ' +
+                (m.costFen === null ? '未配置' : cash(m.costFen))
+              }
+              initial={m.costFen === null ? {} : { costFen: m.costFen }}
+              fields={[number('costFen', '选项成本（分）')]}
+              onSave={(d) => save('/costs/modifiers/' + m.id, 'PATCH', d)}
+            />
+          ))}
+        </section>
+      )}
       {tab === 'ingredients' && (
         <>
           <Editor
@@ -673,6 +722,33 @@ export function Workspace({
           >
             计算当前单份成本
           </button>
+          <button
+            disabled={!sku || !cost || savingSnapshot}
+            onClick={async () => {
+              setSavingSnapshot(true);
+              const requestId = ++costRequest.current;
+              try {
+                setError('');
+                const result = await api<Cost>(
+                  '/costs/variants/' + skuId + '/cost/snapshots',
+                  'POST',
+                  {
+                    month,
+                    fulfillment,
+                    ...(itemsPerOrder ? { itemsPerOrder } : {}),
+                  },
+                );
+                if (requestId === costRequest.current) setCost(result);
+              } catch (err) {
+                setError((err as Error).message);
+              } finally {
+                setSavingSnapshot(false);
+              }
+            }}
+          >
+            保存成本快照
+          </button>
+          <p>预览不会保存历史；保存快照会使用当前资料重新计算。</p>
           {cost && <CostResult cost={cost} />}
         </>
       )}

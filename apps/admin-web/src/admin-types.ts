@@ -74,7 +74,7 @@ export interface Cost {
   missingInputs: string[];
   calculationVersion: string;
   calculatedAt: string;
-  snapshotId: string;
+  snapshotId?: string;
 }
 export type Client = <T>(
   path: string,

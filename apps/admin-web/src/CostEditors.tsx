@@ -56,7 +56,10 @@ export function CostResult({ cost }: { cost: Cost }) {
       </dl>
       <p>当前采购价格与预计销量形成的估算，不代表已发生订单的实际成本。</p>
       <small>
-        {cost.calculationVersion} · {cost.calculatedAt} · 快照 {cost.snapshotId}
+        {cost.calculationVersion} · {cost.calculatedAt} ·{' '}
+        {cost.snapshotId
+          ? '已保存快照 ' + cost.snapshotId
+          : '预览（未保存快照）'}
       </small>
     </article>
   );
