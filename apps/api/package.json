@@ -1,0 +1,33 @@
+{
+  "name": "@platform/api",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/main.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "pnpm build && node --test dist/config.test.js dist/app.test.js",
+    "test:integration": "pnpm build && node --test dist/integration.test.js",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate deploy",
+    "db:validate": "prisma validate"
+  },
+  "dependencies": {
+    "@nestjs/common": "^11.1.0",
+    "@nestjs/core": "^11.1.0",
+    "@nestjs/platform-express": "^11.1.0",
+    "@platform/shared": "workspace:*",
+    "@prisma/client": "6.19.0",
+    "dotenv": "^17.2.0",
+    "ioredis": "^5.8.0",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2"
+  },
+  "devDependencies": {
+    "@nestjs/testing": "^11.1.0",
+    "prisma": "6.19.0",
+    "tsx": "^4.20.0"
+  }
+}

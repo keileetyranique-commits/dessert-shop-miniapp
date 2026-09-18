@@ -1,0 +1,14 @@
+{
+  "name": "@platform/miniapp",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test scripts/build.test.mjs"
+  },
+  "devDependencies": {
+    "miniprogram-api-typings": "^4.0.0"
+  }
+}

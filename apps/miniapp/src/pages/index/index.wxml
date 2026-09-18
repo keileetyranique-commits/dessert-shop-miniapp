@@ -1,0 +1,1 @@
+<view class="page"><view class="title">欢迎使用门店服务</view><view>{{status}}</view><view>门店与商品将在配置后开放。</view><button bindtap="checkConnection">重新连接</button></view>

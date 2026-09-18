@@ -2,6 +2,10 @@
 
 统一前缀：`/api/v1`
 
+Phase 0 已实现：GET /health/live、GET /health/ready、GET /runtime。
+就绪检查同时验证 PostgreSQL 和 Redis；runtime 仅返回公开环境信息，不返回凭据。
+以下业务 API 是后续阶段设计，当前均未实现；尤其不会暴露 Mock 支付或订单写入接口。
+
 ## 1. 顾客端
 
 ### 门店与商品

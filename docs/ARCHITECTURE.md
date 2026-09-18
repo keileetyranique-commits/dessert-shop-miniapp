@@ -145,7 +145,7 @@ interface PaymentProvider {
 ## 8. 测试模式
 
 - 开发 / 测试环境默认可用。
-- 生产环境由服务端配置决定是否允许。
+- 生产环境禁止开启测试模式；APP_ENV=production 或 NODE_ENV=production 与 TEST_MODE=true 同时出现时必须拒绝启动。
 - 关闭后：
   - Mock Payment 禁用
   - Mock Delivery 禁用

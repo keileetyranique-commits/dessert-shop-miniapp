@@ -83,3 +83,8 @@ docs/
 ```
 
 > 注意：正式项目的微信支付密钥、配送平台 Secret、数据库密码等一律只放服务端环境变量，禁止提交到 GitHub。
+
+# 工程启动
+
+Phase 0 的开发环境、测试、小程序导入和限制见 [docs/PHASE-0.md](docs/PHASE-0.md)。
+已安装 Node.js、pnpm 10.15.0 和 Docker Desktop 后，在仓库根目录执行 `pnpm dev`。
