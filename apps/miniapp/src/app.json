@@ -1,0 +1,9 @@
+{
+  "pages": ["pages/index/index"],
+  "window": {
+    "navigationBarTitleText": "门店服务",
+    "navigationBarBackgroundColor": "#0f766e",
+    "navigationBarTextStyle": "white"
+  },
+  "style": "v2"
+}
