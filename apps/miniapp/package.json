@@ -1,0 +1,12 @@
+{
+  "name": "@dessert/miniapp",
+  "private": true,
+  "version": "0.0.1",
+  "scripts": {
+    "dev": "echo \"open with WeChat DevTools\"",
+    "build": "echo \"miniapp build placeholder\"",
+    "test": "echo \"miniapp tests placeholder\"",
+    "lint": "echo \"miniapp lint placeholder\"",
+    "typecheck": "echo \"miniapp typecheck placeholder\""
+  }
+}
