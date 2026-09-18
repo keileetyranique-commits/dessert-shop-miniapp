@@ -1,0 +1,12 @@
+{
+  "name": "@dessert/api",
+  "private": true,
+  "version": "0.0.1",
+  "scripts": {
+    "dev": "node src/main.js",
+    "build": "tsc -p tsconfig.json",
+    "test": "node --test",
+    "lint": "echo \"lint api\"",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  }
+}
