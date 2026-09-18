@@ -4,7 +4,8 @@
 
 Phase 0 已实现：GET /health/live、GET /health/ready、GET /runtime。
 就绪检查同时验证 PostgreSQL 和 Redis；runtime 仅返回公开环境信息，不返回凭据。
-以下业务 API 是后续阶段设计，当前均未实现；尤其不会暴露 Mock 支付或订单写入接口。
+Phase 1 商品、门店与成本 API 的实际路径、鉴权及字段约定见 [PHASE-1.md](PHASE-1.md)。
+下文其余订单、支付、配送等业务 API 仍为后续设计；不会暴露 Mock 支付或订单写入接口。
 
 ## 1. 顾客端
 

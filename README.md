@@ -86,5 +86,7 @@ docs/
 
 # 工程启动
 
+Phase 1 商品、门店与成本中心的登录方式、操作流程和 API 见 [docs/PHASE-1.md](docs/PHASE-1.md)。
+
 Phase 0 的开发环境、测试、小程序导入和限制见 [docs/PHASE-0.md](docs/PHASE-0.md)。
 已安装 Node.js、pnpm 10.15.0 和 Docker Desktop 后，在仓库根目录执行 `pnpm dev`。

@@ -3,7 +3,9 @@
 Phase 0 实际迁移仅包含 merchants、brands、stores。
 品牌归属商户；门店使用 (merchant_id, brand_id) 复合外键约束，防止跨商户品牌引用。
 门店预留 schema_version、feature_flags、custom_fields 和 deleted_at。
-下列业务表为后续阶段设计，尚未建表。所有业务查询需基于已认证租户范围执行。
+Phase 1 在新迁移中加入通用商品、SKU、选项、库存流水、食材采购、配方、包装、月固定成本和成本快照。
+实际模型与租户约束见 Prisma schema 及 [PHASE-1.md](PHASE-1.md)；下文其余订单、支付等表仍为后续设计。
+所有业务查询需基于已认证租户范围执行。
 
 ## 1. 核心原则
 

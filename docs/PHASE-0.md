@@ -2,7 +2,7 @@
 
 ## 范围与决定
 
-继续 `phase-0-engineering-init` 和 Draft PR #11；合并 main 的增长与平台化文档。
+Phase 0 已通过 PR #11 合并到 main；Issue #1 已关闭。
 保留原 Monorepo 目录，内部包使用通用 `@platform/*` 名称。
 Phase 0 不实现商品 CRUD、真实订单、支付、配送、权限或智能研判。
 
@@ -93,12 +93,12 @@ CI 使用固定 pnpm、冻结锁文件，依次执行 lint、格式、类型、�
 重复迁移和真实 PostgreSQL/Redis 集成测试。
 独立 Compose job 从空环境运行一键启动，再验证 API、Admin、POS 及代理。
 
-本地已完成或待核实的实际结果记录在 PR #11；未执行的检查不得标记通过。
-本机没有 Docker，容器运行与真实数据库集成以 CI 结果为准。
+Phase 0 CI checks / compose / PostgreSQL / Redis / migration / integration / smoke 已全部通过。
+原有 CI billing 阻塞已解除。
 微信开发者工具与真机人工验收另行执行。
 
 ## 后续阶段
 
-Phase 1 开始前需要 CI 全绿并完成 Phase 0 评审。
+Phase 0 已完成评审与 CI 验收，Phase 1 从最新 main 开始。
 Phase 1 实现门店、通用 Product/Variant/Modifier、库存与成本中心，
 从第一条业务 API 开始建立身份认证和租户授权；不得把没有鉴权的 CRUD 当成可正式营业能力。
