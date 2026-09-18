@@ -1,0 +1,11 @@
+{
+  "name": "@dessert/pricing",
+  "private": true,
+  "version": "0.0.1",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "node --test",
+    "lint": "echo \"lint pricing\"",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  }
+}
