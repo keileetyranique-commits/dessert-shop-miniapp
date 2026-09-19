@@ -357,6 +357,11 @@ test('Phase 1 real admin, tenant constraints and complete product cost flow', as
           costToken,
         );
         assert.equal('costFen' in modifier, false);
+        assert.equal(
+          (await db.modifier.findUniqueOrThrow({ where: { id: modifier.id } }))
+            .costFen,
+          null,
+        );
         await request(
           '/costs/modifiers/' + modifier.id,
           'PATCH',
@@ -407,13 +412,44 @@ test('Phase 1 real admin, tenant constraints and complete product cost flow', as
           managerToken,
         );
         assert.equal(JSON.stringify(listed).includes('costFen'), false);
+        const costPath = '/costs/modifiers/' + modifier.id;
+        await request(costPath, 'PATCH', { costFen: 35 }, 200, costToken);
+        assert.equal(
+          (await request(costPath, 'PATCH', { costFen: null }, 200, costToken))
+            .costFen,
+          null,
+        );
+        assert.equal(
+          (await db.modifier.findUniqueOrThrow({ where: { id: modifier.id } }))
+            .costFen,
+          null,
+        );
+        assert.equal(
+          (await request(costPath, 'PATCH', { costFen: 0 })).costFen,
+          0,
+        );
+        await request(costPath, 'PATCH', { costFen: null }, 403, managerToken);
+        await request(
+          costPath,
+          'PATCH',
+          { costFen: null },
+          404,
+          otherToken,
+          stores[1]!,
+        );
+        assert.equal(
+          (await db.modifier.findUniqueOrThrow({ where: { id: modifier.id } }))
+            .costFen,
+          0,
+        );
+        await request(costPath, 'PATCH', {}, 400);
         for (const costFen of [
           -1,
           1.2,
           2147483648,
           Number.MAX_SAFE_INTEGER + 1,
           '10',
-          null,
+          '',
         ])
           await request(
             '/costs/modifiers/' + modifier.id,

@@ -18,6 +18,7 @@ function fixture(role: string) {
     body: Record<string, unknown>;
   }[] = [];
   let archived = false;
+  let modifierCost: number | null = null;
   const result = {
     ingredientCostFen: 100,
     packagingCostFen: 0,
@@ -39,6 +40,8 @@ function fixture(role: string) {
         body: init.body ? JSON.parse(String(init.body)) : {},
       });
       if (method === 'DELETE') archived = true;
+      if (method === 'PATCH' && path.endsWith('/costs/modifiers/modifier'))
+        modifierCost = JSON.parse(String(init.body)).costFen;
       const value = path.endsWith('/store')
         ? { id: 'store', name: '门店', address: '', businessHours: '' }
         : path.endsWith('/products')
@@ -67,7 +70,7 @@ function fixture(role: string) {
           : path.endsWith('/categories')
             ? [{ id: 'category', name: '分类', status: 'ACTIVE' }]
             : path.endsWith('/costs/modifiers')
-              ? [{ id: 'modifier', name: '通用服务', costFen: null }]
+              ? [{ id: 'modifier', name: '通用服务', costFen: modifierCost }]
               : path.includes('/cost?')
                 ? result
                 : path.endsWith('/cost/snapshots')
@@ -95,6 +98,10 @@ test('cost manager can edit modifier cost but has no catalog write forms', async
   const field = await screen.findByLabelText('选项成本（分）');
   expect(screen.queryByRole('button', { name: '商品与规格' })).toBeNull();
   expect(screen.queryByRole('button', { name: '库存' })).toBeNull();
+  expect((field as HTMLInputElement).value).toBe('');
+  fireEvent.submit(field.closest('form')!);
+  expect(await screen.findByText('选项成本（分）必须是安全整数')).toBeTruthy();
+  expect(calls.some((c) => c.method === 'PATCH')).toBe(false);
   fireEvent.change(field, { target: { value: '35' } });
   fireEvent.submit(field.closest('form')!);
   await waitFor(() =>
@@ -107,6 +114,23 @@ test('cost manager can edit modifier cost but has no catalog write forms', async
       ),
     ).toBe(true),
   );
+});
+test('clearing a configured modifier cost restores unconfigured without turning it into zero', async () => {
+  fixture('COST_MANAGER');
+  fireEvent.click(screen.getByRole('button', { name: '选项成本' }));
+  let field = await screen.findByLabelText('选项成本（分）');
+  fireEvent.change(field, { target: { value: '35' } });
+  fireEvent.submit(field.closest('form')!);
+  await screen.findByRole('heading', { name: '通用服务 · ¥0.35' });
+  fireEvent.click(
+    screen.getByRole('button', { name: '清除成本 / 标记为未配置' }),
+  );
+  await screen.findByRole('heading', { name: '通用服务 · 未配置' });
+  field = screen.getByLabelText('选项成本（分）');
+  expect((field as HTMLInputElement).value).toBe('');
+  fireEvent.change(field, { target: { value: '0' } });
+  fireEvent.submit(field.closest('form')!);
+  await screen.findByRole('heading', { name: '通用服务 · ¥0.00' });
 });
 test('preview is GET and snapshot save requires an explicit POST', async () => {
   const calls = fixture('OWNER');

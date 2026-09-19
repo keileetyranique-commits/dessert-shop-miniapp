@@ -45,6 +45,7 @@ export function Workspace({
   const [modifiers, setModifiers] = useState<
     (Named & { costFen: number | null })[]
   >([]);
+  const [clearingModifier, setClearingModifier] = useState<string | null>(null);
   const [savingSnapshot, setSavingSnapshot] = useState(false);
   const [productId, setProductId] = useState(''),
     [skuId, setSkuId] = useState(''),
@@ -438,17 +439,36 @@ export function Workspace({
           <h3>通用选项成本</h3>
           <p>维护每次选择的成本；未配置不等于零成本。选项由商品管理员创建。</p>
           {modifiers.map((m) => (
-            <Editor
-              key={m.id + revision}
-              title={
-                m.name +
-                ' · ' +
-                (m.costFen === null ? '未配置' : cash(m.costFen))
-              }
-              initial={m.costFen === null ? {} : { costFen: m.costFen }}
-              fields={[number('costFen', '选项成本（分）')]}
-              onSave={(d) => save('/costs/modifiers/' + m.id, 'PATCH', d)}
-            />
+            <div key={m.id + ':' + revision + ':' + String(m.costFen)}>
+              <Editor
+                title={
+                  m.name +
+                  ' · ' +
+                  (m.costFen === null ? '未配置' : cash(m.costFen))
+                }
+                initial={m.costFen === null ? {} : { costFen: m.costFen }}
+                fields={[{ ...number('costFen', '选项成本（分）'), value: '' }]}
+                onSave={(d) => save('/costs/modifiers/' + m.id, 'PATCH', d)}
+              />
+              <button
+                disabled={m.costFen === null || clearingModifier !== null}
+                onClick={async () => {
+                  setClearingModifier(m.id);
+                  setError('');
+                  try {
+                    await save('/costs/modifiers/' + m.id, 'PATCH', {
+                      costFen: null,
+                    });
+                  } catch (err) {
+                    setError((err as Error).message);
+                  } finally {
+                    setClearingModifier(null);
+                  }
+                }}
+              >
+                清除成本 / 标记为未配置
+              </button>
+            </div>
           ))}
         </section>
       )}

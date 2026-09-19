@@ -108,9 +108,12 @@ OWNER 可维护商品、库存与成本；MANAGER 可维护商品、SKU、选项
 | /admin/categories、/admin/categories/:id                   | GET、POST / PATCH              | 分类                                             |
 | /admin/products、/admin/products/:id                       | GET、POST / GET、PATCH、DELETE | 商品及软删除                                     |
 | /admin/products/:id/variants、/admin/variants/:id          | POST / PATCH                   | SKU 创建/修改                                    |
+| /admin/variants/:id                                        | DELETE                         | 软归档 SKU，保留历史资料                         |
 | /admin/variants/:id/stock                                  | POST                           | 原子库存增减和流水                               |
 | /admin/products/:id/modifier-groups                        | POST                           | 创建通用选项组                                   |
 | /admin/modifier-groups/:id/modifiers、/admin/modifiers/:id | POST / PATCH                   | 通用选项                                         |
+| /admin/costs/modifiers                                     | GET                            | OWNER/COST_MANAGER 查看通用选项成本              |
+| /admin/costs/modifiers/:id                                 | PATCH                          | 设置整数 costFen 或以 null 清除为未配置          |
 | /admin/costs/ingredients、/admin/costs/ingredients/:id     | GET、POST / PATCH              | 食材；基础单位不可改                             |
 | /admin/costs/purchases                                     | GET / POST                     | 不可覆盖的采购历史                               |
 | /admin/costs/variants/:id/recipes、/recipe                 | GET / PUT                      | 版本历史 / 新配方版本                            |
@@ -119,6 +122,7 @@ OWNER 可维护商品、库存与成本；MANAGER 可维护商品、SKU、选项
 | /admin/costs/variants/:id/packaging                        | GET / PUT                      | 履约包装清单                                     |
 | /admin/costs/fixed/:month、/allocation/:month              | GET / PUT                      | 月固定成本 / 分摊规则                            |
 | /admin/costs/variants/:id/cost                             | GET                            | month、fulfillment、可选 itemsPerOrder；只读预览 |
+| /admin/costs/variants/:id/cost/snapshots                   | POST                           | 重新计算当前输入并保存不可变快照                 |
 | /admin/costs/snapshots/:id                                 | GET                            | 读取当前门店历史快照                             |
 
 严格按 SKU 计算，所以成本、配方与包装 API 使用 variants/:id，避免多个规格歧义。
@@ -175,3 +179,5 @@ Phase 1 集成测试通过生产模式 API 验证鉴权，包含跨商户、同�
 - 新增生产配置下角色写权限、Modifier 成本校验/隔离/无泄露、GET 零写入、POST 快照不可变、
   SKU 归档及历史保留、PostgreSQL EXPLAIN 索引路径、界面预览/保存分离与归档确认测试。
   EXPLAIN 测试关闭顺序扫描，仅验证索引能提供无额外 Sort 的路径，不将小样本的优化器选择当成性能基准。
+
+Modifier 成本可通过 PATCH `{ "costFen": null }` 恢复为“未配置”。后台使用明确的“清除成本 / 标记为未配置”按钮；空输入不会自动保存成 0，零成本必须显式录入 0。此修复复用现有 nullable 字段和 CHECK，不新增 migration。

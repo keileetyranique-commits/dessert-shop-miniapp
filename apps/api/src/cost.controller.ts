@@ -64,7 +64,7 @@ export class CostController {
         ...r.scope,
         group: { product: { deletedAt: null } },
       },
-      data: parse(z.object({ costFen: money }).strict(), body),
+      data: parse(z.object({ costFen: money.nullable() }).strict(), body),
     });
   }
   @Get('ingredients') ingredients(@Req() r: AdminRequest) {
