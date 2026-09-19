@@ -18,7 +18,7 @@
 验收：本地一条命令启动 API + DB + Admin + POS。
 
 工程入口、测试命令与验收限制见 [PHASE-0.md](PHASE-0.md)。
-Phase 0 实现保留在 Draft PR #11；容器与真实依赖验收以该 PR 的 CI 结果为准。
+Phase 0 已通过 PR #11 合并到 main；checks、compose、PostgreSQL、Redis、迁移、集成和 smoke 验收已通过，Issue #1 已关闭。
 
 ## Phase 1：商品、门店、成本中心
 

@@ -39,7 +39,8 @@ services:
       retries: 30
   migrate:
     <<: *app
-    command: [pnpm, db:migrate]
+    command:
+      [sh, -c, 'pnpm db:migrate && pnpm --filter @platform/api admin:provision']
     depends_on:
       postgres: { condition: service_healthy }
   api:

@@ -29,20 +29,365 @@ model Brand {
 }
 
 model Store {
-  id            String    @id @default(uuid()) @db.Uuid
-  merchantId    String    @map("merchant_id") @db.Uuid
-  brandId       String    @map("brand_id") @db.Uuid
-  name          String
-  timezone      String    @default("Asia/Shanghai")
-  schemaVersion Int       @default(1) @map("schema_version")
-  featureFlags  Json      @default("{}") @map("feature_flags")
-  customFields  Json      @default("{}") @map("custom_fields")
-  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
-  deletedAt     DateTime? @map("deleted_at") @db.Timestamptz(3)
-  brand         Brand     @relation(fields: [merchantId, brandId], references: [merchantId, id], onDelete: Restrict)
+  id                            String                   @id @default(uuid()) @db.Uuid
+  merchantId                    String                   @map("merchant_id") @db.Uuid
+  brandId                       String                   @map("brand_id") @db.Uuid
+  name                          String
+  timezone                      String                   @default("Asia/Shanghai")
+  schemaVersion                 Int                      @default(1) @map("schema_version")
+  featureFlags                  Json                     @default("{}") @map("feature_flags")
+  customFields                  Json                     @default("{}") @map("custom_fields")
+  createdAt                     DateTime                 @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt                     DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt                     DateTime?                @map("deleted_at") @db.Timestamptz(3)
+  address                       String                   @default("")
+  contactPhone                  String                   @default("")
+  businessHours                 String                   @default("")
+  status                        String                   @default("ACTIVE")
+  brand                         Brand                    @relation(fields: [merchantId, brandId], references: [merchantId, id], onDelete: Restrict)
+  categoryRecords               Category[]
+  productRecords                Product[]
+  variantRecords                Variant[]
+  modifierGroupRecords          ModifierGroup[]
+  modifierRecords               Modifier[]
+  inventoryMovementRecords      InventoryMovement[]
+  ingredientRecords             Ingredient[]
+  purchaseRecordRecords         PurchaseRecord[]
+  recipeRecords                 Recipe[]
+  recipeItemRecords             RecipeItem[]
+  packagingItemRecords          PackagingItem[]
+  packagingConfigurationRecords PackagingConfiguration[]
+  skuPackagingRecords           SkuPackaging[]
+  monthlyFixedCostRecords       MonthlyFixedCost[]
+  costAllocationRuleRecords     CostAllocationRule[]
+  costSnapshotRecords           CostSnapshot[]
 
   @@unique([merchantId, brandId, id])
   @@index([merchantId, brandId])
   @@map("stores")
+}
+
+model Category {
+  id         String    @id @default(uuid()) @db.Uuid
+  merchantId String    @db.Uuid
+  brandId    String    @db.Uuid
+  storeId    String    @db.Uuid
+  createdAt  DateTime  @default(now()) @db.Timestamptz(3)
+  name       String
+  status     String    @default("ACTIVE")
+  deletedAt  DateTime? @db.Timestamptz(3)
+  store      Store     @relation(fields: [merchantId, brandId, storeId], references: [merchantId, brandId, id], onDelete: Restrict)
+
+  productRecords Product[]
+
+  @@unique([storeId, id])
+  @@index([merchantId, brandId, storeId])
+  @@map("categories")
+}
+
+model Product {
+  id                   String          @id @default(uuid()) @db.Uuid
+  merchantId           String          @db.Uuid
+  brandId              String          @db.Uuid
+  storeId              String          @db.Uuid
+  createdAt            DateTime        @default(now()) @db.Timestamptz(3)
+  name                 String
+  description          String          @default("")
+  imageUrl             String          @default("")
+  status               String          @default("ACTIVE")
+  categoryId           String          @db.Uuid
+  deletedAt            DateTime?       @db.Timestamptz(3)
+  store                Store           @relation(fields: [merchantId, brandId, storeId], references: [merchantId, brandId, id], onDelete: Restrict)
+  category             Category        @relation(fields: [storeId, categoryId], references: [storeId, id], onDelete: Restrict)
+  variantRecords       Variant[]
+  modifierGroupRecords ModifierGroup[]
+
+  @@unique([storeId, id])
+  @@index([merchantId, brandId, storeId])
+  @@map("products")
+}
+
+model Variant {
+  id                            String                   @id @default(uuid()) @db.Uuid
+  merchantId                    String                   @db.Uuid
+  brandId                       String                   @db.Uuid
+  storeId                       String                   @db.Uuid
+  createdAt                     DateTime                 @default(now()) @db.Timestamptz(3)
+  productId                     String                   @db.Uuid
+  name                          String
+  salePriceFen                  Int
+  status                        String                   @default("ACTIVE")
+  stockQuantity                 Int                      @default(0)
+  unlimitedStock                Boolean                  @default(false)
+  soldOut                       Boolean                  @default(false)
+  reservedQuantity              Int                      @default(0)
+  deletedAt                     DateTime?                @db.Timestamptz(3)
+  store                         Store                    @relation(fields: [merchantId, brandId, storeId], references: [merchantId, brandId, id], onDelete: Restrict)
+  product                       Product                  @relation(fields: [storeId, productId], references: [storeId, id], onDelete: Restrict)
+  inventoryMovementRecords      InventoryMovement[]
+  recipeRecords                 Recipe[]
+  packagingConfigurationRecords PackagingConfiguration[]
+  costSnapshotRecords           CostSnapshot[]
+
+  @@unique([storeId, id])
+  @@index([merchantId, brandId, storeId])
+  @@map("variants")
+}
+
+model ModifierGroup {
+  id              String     @id @default(uuid()) @db.Uuid
+  merchantId      String     @db.Uuid
+  brandId         String     @db.Uuid
+  storeId         String     @db.Uuid
+  createdAt       DateTime   @default(now()) @db.Timestamptz(3)
+  productId       String     @db.Uuid
+  name            String
+  minSelections   Int        @default(0)
+  maxSelections   Int        @default(1)
+  status          String     @default("ACTIVE")
+  store           Store      @relation(fields: [merchantId, brandId, storeId], references: [merchantId, brandId, id], onDelete: Restrict)
+  product         Product    @relation(fields: [storeId, productId], references: [storeId, id], onDelete: Restrict)
+  modifierRecords Modifier[]
+
+  @@unique([storeId, id])
+  @@index([merchantId, brandId, storeId])
+  @@map("modifier_groups")
+}
+
+model Modifier {
+  id           String        @id @default(uuid()) @db.Uuid
+  merchantId   String        @db.Uuid
+  brandId      String        @db.Uuid
+  storeId      String        @db.Uuid
+  createdAt    DateTime      @default(now()) @db.Timestamptz(3)
+  groupId      String        @db.Uuid
+  name         String
+  salePriceFen Int           @default(0)
+  /// Manual per-selection cost; null means unconfigured. Future recipe sources can resolve cost independently.
+  costFen      Int?
+  status       String        @default("ACTIVE")
+  store        Store         @relation(fields: [merchantId, brandId, storeId], references: [merchantId, brandId, id], onDelete: Restrict)
+  group        ModifierGroup @relation(fields: [storeId, groupId], references: [storeId, id], onDelete: Restrict)
+
+  @@unique([storeId, id])
+  @@index([merchantId, brandId, storeId])
+  @@map("modifiers")
+}
+
+model InventoryMovement {
+  id         String   @id @default(uuid()) @db.Uuid
+  merchantId String   @db.Uuid
+  brandId    String   @db.Uuid
+  storeId    String   @db.Uuid
+  createdAt  DateTime @default(now()) @db.Timestamptz(3)
+  variantId  String   @db.Uuid
+  delta      Int
+  reason     String
+  actor      String
+  store      Store    @relation(fields: [merchantId, brandId, storeId], references: [merchantId, brandId, id], onDelete: Restrict)
+  variant    Variant  @relation(fields: [storeId, variantId], references: [storeId, id], onDelete: Restrict)
+
+  @@unique([storeId, id])
+  @@index([merchantId, brandId, storeId])
+  @@map("inventory_movements")
+}
+
+model Ingredient {
+  id          String    @id @default(uuid()) @db.Uuid
+  merchantId  String    @db.Uuid
+  brandId     String    @db.Uuid
+  storeId     String    @db.Uuid
+  createdAt   DateTime  @default(now()) @db.Timestamptz(3)
+  name        String
+  baseUnit    String
+  lossRateBps Int       @default(0)
+  status      String    @default("ACTIVE")
+  deletedAt   DateTime? @db.Timestamptz(3)
+  store       Store     @relation(fields: [merchantId, brandId, storeId], references: [merchantId, brandId, id], onDelete: Restrict)
+
+  purchaseRecordRecords PurchaseRecord[]
+  recipeItemRecords     RecipeItem[]
+
+  @@unique([storeId, id])
+  @@index([merchantId, brandId, storeId])
+  @@map("ingredients")
+}
+
+model PurchaseRecord {
+  id           String     @id @default(uuid()) @db.Uuid
+  merchantId   String     @db.Uuid
+  brandId      String     @db.Uuid
+  storeId      String     @db.Uuid
+  createdAt    DateTime   @default(now()) @db.Timestamptz(3)
+  ingredientId String     @db.Uuid
+  supplier     String
+  quantity     String
+  unit         String
+  totalCostFen Int
+  purchasedAt  DateTime   @db.Timestamptz(3)
+  store        Store      @relation(fields: [merchantId, brandId, storeId], references: [merchantId, brandId, id], onDelete: Restrict)
+  ingredient   Ingredient @relation(fields: [storeId, ingredientId], references: [storeId, id], onDelete: Restrict)
+
+  @@unique([storeId, id])
+  @@index([merchantId, brandId, storeId])
+  @@index([storeId, ingredientId, purchasedAt(sort: Desc), createdAt(sort: Desc), id(sort: Desc)], map: "purchase_latest_idx")
+  @@map("purchase_records")
+}
+
+model Recipe {
+  id                   String       @id @default(uuid()) @db.Uuid
+  merchantId           String       @db.Uuid
+  brandId              String       @db.Uuid
+  storeId              String       @db.Uuid
+  createdAt            DateTime     @default(now()) @db.Timestamptz(3)
+  variantId            String       @db.Uuid
+  version              Int
+  active               Boolean      @default(true)
+  yieldQuantity        Int          @default(1)
+  laborSeconds         Int          @default(0)
+  otherVariableCostFen Int          @default(0)
+  store                Store        @relation(fields: [merchantId, brandId, storeId], references: [merchantId, brandId, id], onDelete: Restrict)
+  variant              Variant      @relation(fields: [storeId, variantId], references: [storeId, id], onDelete: Restrict)
+  recipeItemRecords    RecipeItem[]
+
+  @@unique([storeId, id])
+  @@unique([storeId, variantId, version])
+  @@index([merchantId, brandId, storeId])
+  @@map("recipes")
+}
+
+model RecipeItem {
+  id           String     @id @default(uuid()) @db.Uuid
+  merchantId   String     @db.Uuid
+  brandId      String     @db.Uuid
+  storeId      String     @db.Uuid
+  createdAt    DateTime   @default(now()) @db.Timestamptz(3)
+  recipeId     String     @db.Uuid
+  ingredientId String     @db.Uuid
+  quantity     String
+  unit         String
+  store        Store      @relation(fields: [merchantId, brandId, storeId], references: [merchantId, brandId, id], onDelete: Restrict)
+  recipe       Recipe     @relation(fields: [storeId, recipeId], references: [storeId, id], onDelete: Restrict)
+  ingredient   Ingredient @relation(fields: [storeId, ingredientId], references: [storeId, id], onDelete: Restrict)
+
+  @@unique([storeId, id])
+  @@index([merchantId, brandId, storeId])
+  @@map("recipe_items")
+}
+
+model PackagingItem {
+  id          String    @id @default(uuid()) @db.Uuid
+  merchantId  String    @db.Uuid
+  brandId     String    @db.Uuid
+  storeId     String    @db.Uuid
+  createdAt   DateTime  @default(now()) @db.Timestamptz(3)
+  name        String
+  unitCostFen Int
+  scope       String    @default("SKU")
+  status      String    @default("ACTIVE")
+  deletedAt   DateTime? @db.Timestamptz(3)
+  store       Store     @relation(fields: [merchantId, brandId, storeId], references: [merchantId, brandId, id], onDelete: Restrict)
+
+  skuPackagingRecords SkuPackaging[]
+
+  @@unique([storeId, id])
+  @@index([merchantId, brandId, storeId])
+  @@map("packaging_items")
+}
+
+model PackagingConfiguration {
+  id                  String         @id @default(uuid()) @db.Uuid
+  merchantId          String         @db.Uuid
+  brandId             String         @db.Uuid
+  storeId             String         @db.Uuid
+  createdAt           DateTime       @default(now()) @db.Timestamptz(3)
+  variantId           String         @db.Uuid
+  fulfillment         String
+  store               Store          @relation(fields: [merchantId, brandId, storeId], references: [merchantId, brandId, id], onDelete: Restrict)
+  variant             Variant        @relation(fields: [storeId, variantId], references: [storeId, id], onDelete: Restrict)
+  skuPackagingRecords SkuPackaging[]
+
+  @@unique([storeId, id])
+  @@unique([storeId, variantId, fulfillment])
+  @@index([merchantId, brandId, storeId])
+  @@map("packaging_configurations")
+}
+
+model SkuPackaging {
+  id              String                 @id @default(uuid()) @db.Uuid
+  merchantId      String                 @db.Uuid
+  brandId         String                 @db.Uuid
+  storeId         String                 @db.Uuid
+  createdAt       DateTime               @default(now()) @db.Timestamptz(3)
+  configurationId String                 @db.Uuid
+  packagingItemId String                 @db.Uuid
+  quantity        Int
+  store           Store                  @relation(fields: [merchantId, brandId, storeId], references: [merchantId, brandId, id], onDelete: Restrict)
+  configuration   PackagingConfiguration @relation(fields: [storeId, configurationId], references: [storeId, id], onDelete: Restrict)
+  packagingItem   PackagingItem          @relation(fields: [storeId, packagingItemId], references: [storeId, id], onDelete: Restrict)
+
+  @@unique([storeId, id])
+  @@index([merchantId, brandId, storeId])
+  @@map("sku_packaging")
+}
+
+model MonthlyFixedCost {
+  id              String   @id @default(uuid()) @db.Uuid
+  merchantId      String   @db.Uuid
+  brandId         String   @db.Uuid
+  storeId         String   @db.Uuid
+  createdAt       DateTime @default(now()) @db.Timestamptz(3)
+  month           String
+  rentFen         Int
+  utilitiesFen    Int
+  payrollFen      Int
+  propertyFeeFen  Int
+  depreciationFen Int
+  softwareFen     Int
+  otherFen        Int
+  store           Store    @relation(fields: [merchantId, brandId, storeId], references: [merchantId, brandId, id], onDelete: Restrict)
+
+  @@unique([storeId, id])
+  @@unique([storeId, month])
+  @@index([merchantId, brandId, storeId])
+  @@map("monthly_fixed_costs")
+}
+
+model CostAllocationRule {
+  id                    String   @id @default(uuid()) @db.Uuid
+  merchantId            String   @db.Uuid
+  brandId               String   @db.Uuid
+  storeId               String   @db.Uuid
+  createdAt             DateTime @default(now()) @db.Timestamptz(3)
+  month                 String
+  method                String
+  expectedMonthlyOrders Int
+  expectedMonthlyItems  Int
+  laborFenPerMinute     Int
+  schemaVersion         Int      @default(1)
+  futureRules           Json     @default("{}")
+  store                 Store    @relation(fields: [merchantId, brandId, storeId], references: [merchantId, brandId, id], onDelete: Restrict)
+
+  @@unique([storeId, id])
+  @@unique([storeId, month])
+  @@index([merchantId, brandId, storeId])
+  @@map("cost_allocation_rules")
+}
+
+model CostSnapshot {
+  id                 String   @id @default(uuid()) @db.Uuid
+  merchantId         String   @db.Uuid
+  brandId            String   @db.Uuid
+  storeId            String   @db.Uuid
+  createdAt          DateTime @default(now()) @db.Timestamptz(3)
+  variantId          String   @db.Uuid
+  calculationVersion String
+  inputs             Json
+  result             Json
+  store              Store    @relation(fields: [merchantId, brandId, storeId], references: [merchantId, brandId, id], onDelete: Restrict)
+  variant            Variant  @relation(fields: [storeId, variantId], references: [storeId, id], onDelete: Restrict)
+
+  @@unique([storeId, id])
+  @@index([merchantId, brandId, storeId])
+  @@map("cost_snapshots")
 }

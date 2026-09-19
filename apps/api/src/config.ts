@@ -1,5 +1,6 @@
 export const CONFIG = Symbol('CONFIG');
 export interface AppConfig {
+  adminIdentities: Identity[];
   environment: string;
   testMode: boolean;
   databaseUrl: string;
@@ -43,6 +44,7 @@ export function parseConfig(env: NodeJS.ProcessEnv): AppConfig {
       throw new Error('CORS_ORIGINS must contain exact origins');
   }
   return {
+    adminIdentities: parseIdentities(env.ADMIN_IDENTITIES),
     environment,
     testMode: mode === 'true',
     databaseUrl: url('DATABASE_URL', ['postgresql:', 'postgres:']),
@@ -52,3 +54,4 @@ export function parseConfig(env: NodeJS.ProcessEnv): AppConfig {
     corsOrigins,
   };
 }
+import { parseIdentities, type Identity } from './identity.js';

@@ -4,7 +4,8 @@
 
 Phase 0 已实现：GET /health/live、GET /health/ready、GET /runtime。
 就绪检查同时验证 PostgreSQL 和 Redis；runtime 仅返回公开环境信息，不返回凭据。
-以下业务 API 是后续阶段设计，当前均未实现；尤其不会暴露 Mock 支付或订单写入接口。
+Phase 1 商品、门店与成本 API 的实际路径、鉴权及字段约定见 [PHASE-1.md](PHASE-1.md)。
+下文其余订单、支付、配送等业务 API 仍为后续设计；不会暴露 Mock 支付或订单写入接口。
 
 ## 1. 顾客端
 
@@ -149,3 +150,5 @@ Phase 0 已实现：GET /health/live、GET /health/ready、GET /runtime。
 - 配送发单
 - 配送取消
 - 配送回调
+
+Phase 1 审查修复：成本 GET 仅预览，显式 POST `/admin/costs/variants/:id/cost/snapshots` 保存快照；新增受成本权限保护的 Modifier 成本接口和 `DELETE /admin/variants/:id` 归档。完整权限及参数见 [Phase 1](PHASE-1.md)。

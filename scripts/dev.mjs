@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 function run(args) {
   const result = spawnSync('docker', args, { stdio: 'inherit' });
@@ -44,9 +44,26 @@ try {
     throw new Error(
       'pnpm dev only accepts the development environment. Use a separate production deployment.',
     );
+  if (!/^ADMIN_IDENTITIES=/m.test(env)) {
+    const identities = [
+      {
+        id: 'local-owner',
+        token: randomBytes(32).toString('hex'),
+        merchantId: randomUUID(),
+        brandId: randomUUID(),
+        storeIds: '*',
+        role: 'OWNER',
+      },
+    ];
+    writeFileSync(
+      '.env',
+      env + '\nADMIN_IDENTITIES=' + JSON.stringify(identities) + '\n',
+      { mode: 0o600 },
+    );
+  }
   run(['compose', 'up', '--build', '--wait', '--wait-timeout', '180']);
   console.log(
-    'API: http://localhost:3000/api/v1/health/ready\nAdmin: http://localhost:5173\nPOS: http://localhost:5174\nStop: docker compose down (data retained)',
+    'API: http://localhost:3000/api/v1/health/ready\nAdmin: http://localhost:5173\nPOS: http://localhost:5174\nAdmin credential: token in local .env ADMIN_IDENTITIES (never share or commit)\nStop: docker compose down (data retained)',
   );
 } catch (error) {
   console.error(error.message);
