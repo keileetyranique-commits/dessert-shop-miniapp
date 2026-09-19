@@ -33,6 +33,8 @@ Phase 0 已通过 PR #11 合并到 main；checks、compose、PostgreSQL、Redis�
 
 验收：后台可录入一杯甜品完整成本并算出单杯成本。
 
+Phase 1 已通过 PR #15 合并到 main，Issue #2 已完成。后续商家界面必须同时遵守 [商家易读化与老板模式规则](MERCHANT-UX-RULES.md)。
+
 ## Phase 2：Pricing Engine
 
 - 优惠
@@ -130,6 +132,8 @@ Phase 0 已通过 PR #11 合并到 main；checks、compose、PostgreSQL、Redis�
 
 ## Codex 工作规则
 
+Codex 每次开始开发前必须先读取仓库根目录 `AGENTS.md`，并读取 [商家易读化与老板模式规则](MERCHANT-UX-RULES.md)。这两份文件属于仓库级强制规则；涉及 UI、商家流程、经营分析、AI 研判、金额、状态、单位和表单时必须逐项验收。
+
 1. 每个 Phase 单独分支。
 2. 每个 Phase 先写测试再完成功能。
 3. 不允许把 Secret 写进仓库。
@@ -138,6 +142,10 @@ Phase 0 已通过 PR #11 合并到 main；checks、compose、PostgreSQL、Redis�
 6. 任何 Mock 能力必须可由服务端总开关完全禁用。
 7. 每完成一个 Phase，更新文档和迁移脚本。
 8. 不允许一次性大改全部模块；使用小 PR。
+9. 成熟开源方案优先复用；引入前确认许可证并记录来源，基础 UI/CRUD 不无理由重复造轮子。
+10. 普通商家默认只看人话、人民币元、正常百分比和中文状态；Fen、bps、内部枚举、IANA 时区等只留在内部或高级诊断层。
+11. 能由系统安全自动填写的字段不要强迫商家填写；表单明确区分必填、选填和系统自动。
+12. AI 和外部市场分析遵循“本地统计/筛选优先，AI 按需研判，多模型仅必要时复核”的成本控制原则。
 
 
 ## Phase 7.5：智能研判、首页计划控制与数据导出
