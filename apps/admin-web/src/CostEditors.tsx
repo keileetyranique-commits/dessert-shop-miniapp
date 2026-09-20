@@ -10,10 +10,11 @@ import type {
   Package,
   PackLine,
 } from './admin-types';
+import { labels } from './localization';
 import { cash, number, unitOptions } from './admin-fields';
 export function CostResult({ cost }: { cost: Cost }) {
   const labels: Record<string, string> = {
-    BOM: '配方 BOM',
+    BOM: '配方用料',
     PACKAGING: '当前履约包装配置',
     VARIABLE_COST: '可变人工配置或配方',
     FIXED_COST: '当月固定成本或分摊规则',
@@ -55,12 +56,15 @@ export function CostResult({ cost }: { cost: Cost }) {
         ))}
       </dl>
       <p>当前采购价格与预计销量形成的估算，不代表已发生订单的实际成本。</p>
-      <small>
-        {cost.calculationVersion} · {cost.calculatedAt} ·{' '}
-        {cost.snapshotId
-          ? '已保存快照 ' + cost.snapshotId
-          : '预览（未保存快照）'}
-      </small>
+      <details>
+        <summary>高级计算信息</summary>
+        <small>
+          {cost.calculationVersion} · {cost.calculatedAt} ·{' '}
+          {cost.snapshotId
+            ? '已保存快照 ' + cost.snapshotId
+            : '预览（未保存快照）'}
+        </small>
+      </details>
     </article>
   );
 }
@@ -147,7 +151,9 @@ export function RecipeEditor({
               }
             >
               {unitOptions.map((o) => (
-                <option key={o.value}>{o.value}</option>
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
               ))}
             </select>
           </label>
@@ -273,7 +279,7 @@ export function PackagingEditor({
   }, [sku.id, fulfillment]);
   return (
     <div>
-      <h3>SKU 履约包装</h3>
+      <h3>规格 履约包装</h3>
       {error && <p role="alert">{error}</p>}
       <label>
         履约方式
@@ -282,7 +288,9 @@ export function PackagingEditor({
           onChange={(e) => setFulfillment(e.target.value)}
         >
           {['PICKUP', 'DELIVERY', 'DINE_IN'].map((v) => (
-            <option key={v}>{v}</option>
+            <option key={v} value={v}>
+              {labels[v]}
+            </option>
           ))}
         </select>
       </label>
@@ -358,7 +366,7 @@ export function PackagingEditor({
         }}
       />
       <p>
-        保存空列表表示此履约方式明确无需 SKU 包装。整单公共包装在订单阶段实现。
+        保存空列表表示此履约方式明确无需 规格 包装。整单公共包装在订单阶段实现。
       </p>
     </div>
   );

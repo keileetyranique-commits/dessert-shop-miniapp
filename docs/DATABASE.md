@@ -358,3 +358,10 @@ Phase 1 在新迁移中加入通用商品、SKU、选项、库存流水、食材
 - scope
 - response_json
 - expires_at
+
+## Phase 1.1 上传资产
+
+新增 media_assets：id、merchantId、brandId、storeId、storageKey、mimeType、size、createdAt。
+三层租户字段通过复合外键引用 stores；storageKey 唯一；大小有数据库 CHECK；租户索引用于授权查询。
+新增 migration 202609190003_merchant_ux，不修改旧迁移。门店归档使用已有 deletedAt/status，不级联物理删除商品、配方、采购或成本快照。
+商品 imageUrl 保存鉴权媒体接口地址，存储适配器可替换，不加入云厂商领域字段。

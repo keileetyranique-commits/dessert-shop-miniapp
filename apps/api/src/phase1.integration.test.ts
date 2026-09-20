@@ -1,4 +1,8 @@
 import 'reflect-metadata';
+import sharp from 'sharp';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomBytes, randomUUID } from 'node:crypto';
@@ -69,6 +73,9 @@ test('Phase 1 real admin, tenant constraints and complete product cost flow', as
     TEST_MODE: 'false',
     ADMIN_IDENTITIES: JSON.stringify(identities),
   });
+  const uploadRoot = await mkdtemp(join(tmpdir(), 'merchant-ux-'));
+  const previousRoot = process.env.UPLOAD_DIR;
+  process.env.UPLOAD_DIR = uploadRoot;
   let app: Awaited<ReturnType<typeof createApp>> | undefined;
   try {
     for (let i = 0; i < 2; i++) {
@@ -1004,9 +1011,214 @@ test('Phase 1 real admin, tenant constraints and complete product cost flow', as
         );
       },
     );
+    await t.test('安全图片上传、默认规格和门店归档保留历史', async () => {
+      const buffer = await sharp({
+        create: { width: 2, height: 2, channels: 3, background: '#ffffff' },
+      })
+        .png()
+        .toBuffer();
+      async function upload(
+        name: string,
+        mime: string,
+        bytes: Uint8Array,
+        token = ownerToken,
+        store = stores[0]!,
+      ) {
+        const form = new FormData();
+        form.append(
+          'file',
+          new Blob([new Uint8Array(bytes)], { type: mime }),
+          name,
+        );
+        return fetch(base + '/media', {
+          method: 'POST',
+          headers: { Authorization: 'Bearer ' + token, 'X-Store-Id': store },
+          body: form,
+        });
+      }
+      assert.equal(
+        (await upload('image.png', 'image/png', buffer, '')).status,
+        401,
+      );
+      assert.equal(
+        (await upload('image.png', 'image/png', buffer, costToken)).status,
+        403,
+      );
+      assert.equal(
+        (await upload('image.png', 'image/png', buffer, ownerToken, stores[1]!))
+          .status,
+        403,
+      );
+      for (const [name, mime, bytes] of [
+        ['../image.png', 'image/png', buffer],
+        ['x.svg', 'image/svg+xml', buffer],
+        ['x.png', 'text/html', buffer],
+        ['x.png', 'image/png', Buffer.from('<script>danger</script>')],
+        ['x.jpg', 'image/jpeg', buffer],
+      ] as const)
+        assert.equal((await upload(name, mime, bytes)).status, 400);
+      assert.equal(
+        (await upload('x.png', 'image/png', Buffer.alloc(5 * 1024 * 1024 + 1)))
+          .status,
+        413,
+      );
+      const uploaded = await upload(
+        'image.png',
+        'image/png',
+        buffer,
+        managerToken,
+      );
+      assert.equal(uploaded.status, 201);
+      const asset = await uploaded.json();
+      const image = await fetch(base + '/media/' + asset.id, {
+        headers: {
+          Authorization: 'Bearer ' + ownerToken,
+          'X-Store-Id': stores[0]!,
+        },
+      });
+      assert.equal(image.status, 200);
+      assert.equal(image.headers.get('content-type'), 'image/webp');
+      assert.equal(image.headers.get('x-content-type-options'), 'nosniff');
+      assert.equal(
+        (
+          await fetch(base + '/media/' + asset.id, {
+            headers: {
+              Authorization: 'Bearer ' + otherToken,
+              'X-Store-Id': stores[1]!,
+            },
+          })
+        ).status,
+        404,
+      );
+      assert.equal(
+        (
+          await fetch(base + '/media/' + asset.id, {
+            headers: {
+              Authorization: 'Bearer ' + brandOwnerToken,
+              'X-Store-Id': stores[2]!,
+            },
+          })
+        ).status,
+        404,
+      );
+      const created = await request(
+        '/products/simple',
+        'POST',
+        {
+          name: '普通零售商品',
+          categoryId: category.id,
+          salePriceFen: 1880,
+          imageUrl: asset.imageUrl,
+        },
+        201,
+        managerToken,
+      );
+      await request(
+        '/products/simple',
+        'POST',
+        { name: '禁止', categoryId: category.id, salePriceFen: 1880 },
+        403,
+        costToken,
+      );
+      for (const price of [0.1, -1, 2147483648])
+        await request(
+          '/products/simple',
+          'POST',
+          { name: '无效价格', categoryId: category.id, salePriceFen: price },
+          400,
+        );
+      const legacyUrl = 'https://example.invalid/legacy.png';
+      await db.product.update({
+        where: { id: created.id },
+        data: { imageUrl: legacyUrl },
+      });
+      await request('/products/' + created.id, 'PATCH', {
+        name: '兼容历史商品',
+        imageUrl: legacyUrl,
+      });
+      await request(
+        '/products/' + created.id,
+        'PATCH',
+        { imageUrl: 'https://example.invalid/new.png' },
+        403,
+      );
+      await request('/products/' + created.id, 'PATCH', {
+        imageUrl: asset.imageUrl,
+      });
+      const detail = await request('/products/' + created.id);
+      assert.equal(detail.variantRecords.length, 1);
+      assert.equal(detail.variantRecords[0].name, '默认规格');
+      assert.equal(detail.variantRecords[0].salePriceFen, 1880);
+      await request(
+        '/products/simple',
+        'POST',
+        {
+          name: '跨店图片',
+          categoryId: category.id,
+          salePriceFen: 1,
+          imageUrl: asset.imageUrl,
+        },
+        404,
+        brandOwnerToken,
+        stores[2]!,
+      );
+      await request(
+        '/store',
+        'DELETE',
+        { confirmationName: 'Test store' },
+        403,
+        managerToken,
+      );
+      await request(
+        '/store',
+        'DELETE',
+        { confirmationName: 'Test store' },
+        403,
+        costToken,
+      );
+      await request(
+        '/store',
+        'DELETE',
+        { confirmationName: 'Test store' },
+        403,
+        otherToken,
+        stores[0]!,
+      );
+      await request('/store', 'DELETE', { confirmationName: '错误名称' }, 404);
+      const archived = await request('/store', 'DELETE', {
+        confirmationName: 'Test store',
+      });
+      assert.ok(archived.deletedAt);
+      assert.equal(archived.status, 'INACTIVE');
+      assert.equal(
+        (await request('/stores')).some(
+          (s: { id: string }) => s.id === stores[0],
+        ),
+        false,
+      );
+      await request('/products', 'GET', undefined, 403);
+      assert.equal(
+        (await upload('image.png', 'image/png', buffer)).status,
+        403,
+      );
+      assert.equal(
+        (
+          await fetch(base + '/media/' + asset.id, {
+            headers: {
+              Authorization: 'Bearer ' + ownerToken,
+              'X-Store-Id': stores[0]!,
+            },
+          })
+        ).status,
+        403,
+      );
+      assert.ok(await db.product.findUnique({ where: { id: created.id } }));
+      assert.ok(await db.costSnapshot.count({ where: { storeId: stores[0] } }));
+    });
   } finally {
     if (app) await app.close();
     const where = { merchantId: { in: merchants } };
+    await db.mediaAsset.deleteMany({ where });
     await db.costSnapshot.deleteMany({ where });
     await db.skuPackaging.deleteMany({ where });
     await db.packagingConfiguration.deleteMany({ where });
@@ -1027,5 +1239,9 @@ test('Phase 1 real admin, tenant constraints and complete product cost flow', as
     await db.brand.deleteMany({ where });
     await db.merchant.deleteMany({ where: { id: { in: merchants } } });
     await db.$disconnect();
+    if (previousRoot === undefined) delete process.env.UPLOAD_DIR;
+    else process.env.UPLOAD_DIR = previousRoot;
+    assert.ok(uploadRoot.startsWith(join(tmpdir(), 'merchant-ux-')));
+    await rm(uploadRoot, { recursive: true, force: true });
   }
 });

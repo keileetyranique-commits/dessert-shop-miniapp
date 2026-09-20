@@ -1,3 +1,5 @@
+import { ConfigProvider } from 'antd';
+import zhCN from 'antd/locale/zh_CN';
 import { useEffect, useState } from 'react';
 import { AdminPanel } from './AdminPanel';
 import type { RuntimeInfo } from '@platform/shared';
@@ -32,34 +34,36 @@ export function App() {
     return () => controller.abort();
   }, [attempt]);
   return (
-    <main>
-      <header>
-        <span className="eyebrow">STORE PLATFORM</span>
-        <h1>商家管理后台</h1>
-        <p role="status">
-          {error
-            ? '服务连接失败，请检查网络或联系管理员。'
-            : runtime
-              ? runtime.testMode
-                ? '测试模式 · 不产生真实交易'
-                : '正式模式'
-              : '正在连接服务…'}
-        </p>
-        {error && (
-          <button onClick={() => setAttempt((value) => value + 1)}>
-            重新连接
-          </button>
-        )}
-      </header>
-      <section>
-        <h2>智能经营建议</h2>
-        <p>
-          暂无经营数据。接入门店与商品后，将在这里显示经营趋势和待确认计划。
-        </p>
-        <p>计划执行、优惠发布与改价功能将在后续阶段开放。</p>
-      </section>
-      <AdminPanel />
-      <footer>商品、门店与成本中心 · Phase 1</footer>
-    </main>
+    <ConfigProvider locale={zhCN}>
+      <main>
+        <header>
+          <span className="eyebrow">门店工作台</span>
+          <h1>商家管理后台</h1>
+          <p role="status">
+            {error
+              ? '服务连接失败，请检查网络或联系管理员。'
+              : runtime
+                ? runtime.testMode
+                  ? '测试模式 · 不产生真实交易'
+                  : '正式模式'
+                : '正在连接服务…'}
+          </p>
+          {error && (
+            <button onClick={() => setAttempt((value) => value + 1)}>
+              重新连接
+            </button>
+          )}
+        </header>
+        <section>
+          <h2>智能经营建议</h2>
+          <p>
+            暂无经营数据。接入门店与商品后，将在这里显示经营趋势和待确认计划。
+          </p>
+          <p>计划执行、优惠发布与改价功能将在后续阶段开放。</p>
+        </section>
+        <AdminPanel />
+        <footer>商品与经营管理</footer>
+      </main>
+    </ConfigProvider>
   );
 }

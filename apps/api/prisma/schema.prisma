@@ -61,6 +61,7 @@ model Store {
   monthlyFixedCostRecords       MonthlyFixedCost[]
   costAllocationRuleRecords     CostAllocationRule[]
   costSnapshotRecords           CostSnapshot[]
+  mediaAssets                   MediaAsset[]
 
   @@unique([merchantId, brandId, id])
   @@index([merchantId, brandId])
@@ -390,4 +391,18 @@ model CostSnapshot {
   @@unique([storeId, id])
   @@index([merchantId, brandId, storeId])
   @@map("cost_snapshots")
+}
+
+model MediaAsset {
+  id String @id @default(uuid()) @db.Uuid
+  merchantId String @db.Uuid
+  brandId String @db.Uuid
+  storeId String @db.Uuid
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  storageKey String @unique
+  mimeType String
+  size Int
+  store Store @relation(fields: [merchantId, brandId, storeId], references: [merchantId, brandId, id], onDelete: Restrict)
+  @@index([merchantId, brandId, storeId])
+  @@map("media_assets")
 }

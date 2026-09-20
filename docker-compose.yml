@@ -48,8 +48,13 @@ services:
     command: [pnpm, --filter, '@platform/api', dev]
     environment:
       API_HOST: 0.0.0.0
+      UPLOAD_DIR: /workspace/data/uploads
     ports: ['127.0.0.1:3000:3000']
-    volumes: ['./apps/api/src:/workspace/apps/api/src']
+    volumes:
+      [
+        './apps/api/src:/workspace/apps/api/src',
+        'uploads_data:/workspace/data/uploads',
+      ]
     depends_on:
       migrate: { condition: service_completed_successfully }
       redis: { condition: service_healthy }
@@ -109,3 +114,4 @@ services:
 volumes:
   postgres_data:
   redis_data:
+  uploads_data:

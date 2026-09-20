@@ -1,3 +1,5 @@
+import { MerchantContext } from './MerchantContext';
+import { labels } from './localization';
 import { useState } from 'react';
 import { Editor, type Values } from './Editor';
 import type { Store } from './admin-types';
@@ -13,12 +15,14 @@ export function AdminPanel() {
       storeIds: string[] | '*';
     } | null>(null),
     [stores, setStores] = useState<Store[]>([]),
-    [storeId, setStoreId] = useState('');
+    [storeId, setStoreId] = useState(''),
+    [notice, setNotice] = useState('');
   async function login(data: Values) {
     const value = String(data.token),
       api = createClient(value);
     const identity = await api<NonNullable<typeof session>>('/session'),
       list = await api<Store[]>('/stores');
+    setNotice('');
     setToken(value);
     setSession(identity);
     setStores(list);
@@ -27,7 +31,7 @@ export function AdminPanel() {
   if (!session)
     return (
       <section>
-        <h2>登录成本中心</h2>
+        <h2>登录商家后台</h2>
         <p>
           使用管理员配置的访问凭据。凭据只保留在本页内存中，刷新或退出后需要重新输入。
         </p>
@@ -43,7 +47,7 @@ export function AdminPanel() {
       <div className="toolbar">
         <h2>商品与成本中心</h2>
         <span>
-          {session.id} · {session.role}
+          {session.id} · {labels[session.role]}
         </span>
         <button
           onClick={() => {
@@ -56,6 +60,7 @@ export function AdminPanel() {
           退出
         </button>
       </div>
+      {notice && <p role="alert">{notice}</p>}
       <label>
         当前授权门店
         <select value={storeId} onChange={(e) => setStoreId(e.target.value)}>
@@ -73,22 +78,57 @@ export function AdminPanel() {
           <Editor
             title="新门店"
             fields={storeFields}
+            automatic="北京时间；营业中"
             onSave={async (data) => {
               const api = createClient(token);
-              const created = await api<Store>('/stores', 'POST', data);
-              setStores(await api('/stores'));
-              setStoreId(created.id);
+              const created = await api<Store | undefined>(
+                '/stores',
+                'POST',
+                data,
+              );
+              const list = await api<Store[]>('/stores');
+              if (!Array.isArray(list))
+                throw Error(
+                  '门店已提交，但列表未能更新，请刷新确认，不要重复创建',
+                );
+              setStores(list);
+              const added = list.filter(
+                (s) => !stores.some((old) => old.id === s.id),
+              );
+              const id =
+                created?.id ?? (added.length === 1 ? added[0]!.id : undefined);
+              if (!id)
+                throw Error('门店已提交，请刷新列表确认结果，不要重复创建');
+              setStoreId(id);
             }}
           />
         </details>
       )}
+      {!storeId && <p>请选择门店，或先创建一家门店。</p>}
       {storeId && (
-        <Workspace
-          key={token + storeId}
-          token={token}
-          storeId={storeId}
-          role={session.role}
-        />
+        <MerchantContext.Provider value={{ token, storeId }}>
+          <Workspace
+            key={token + storeId}
+            token={token}
+            storeId={storeId}
+            role={session.role}
+            onArchived={async () => {
+              const remaining = stores.filter((s) => s.id !== storeId);
+              setStores(remaining);
+              setStoreId(remaining[0]?.id ?? '');
+              setNotice('');
+              try {
+                const list = await createClient(token)<Store[]>('/stores');
+                setStores(list);
+                setStoreId(list[0]?.id ?? '');
+              } catch {
+                setNotice(
+                  '门店已归档，暂时无法刷新其他门店，请稍后重新登录确认',
+                );
+              }
+            }}
+          />
+        </MerchantContext.Provider>
       )}
     </section>
   );

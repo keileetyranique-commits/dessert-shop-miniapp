@@ -33,7 +33,7 @@ test('login keeps credentials in memory and sends verified store selection on bu
                 businessHours: '营业时间',
               }
             : [];
-      return { ok: true, json: async () => value };
+      return new Response(JSON.stringify(value));
     }),
   );
   render(<AdminPanel />);
@@ -71,7 +71,8 @@ test('failed login does not expose business UI', async () => {
     'fetch',
     vi.fn().mockResolvedValue({
       ok: false,
-      json: async () => ({ message: '后台访问凭据无效' }),
+      status: 401,
+      text: async () => JSON.stringify({ message: '后台访问凭据无效' }),
     }),
   );
   render(<AdminPanel />);
