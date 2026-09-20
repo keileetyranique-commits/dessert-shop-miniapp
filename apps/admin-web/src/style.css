@@ -34,7 +34,9 @@ section {
 p {
   line-height: 1.8;
 }
-button {
+button:where(
+  :not(.ant-btn):not(.ant-modal-close):not(.ant-pagination-item-link)
+) {
   background: #0f766e;
   color: white;
   border: 0;
@@ -142,4 +144,45 @@ dl > div {
 }
 small {
   overflow-wrap: anywhere;
+}
+
+fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+legend {
+  font-weight: 600;
+}
+.automatic {
+  color: #536963;
+  font-size: 13px;
+}
+.product-photo {
+  width: 88px;
+  height: 88px;
+  object-fit: cover;
+  border-radius: 8px;
+}
+.image-upload {
+  min-width: 0;
+}
+@media (max-width: 600px) {
+  main {
+    padding: 16px 10px;
+  }
+  section {
+    padding: 16px 12px;
+  }
+  .form-grid,
+  .selectors {
+    grid-template-columns: 1fr;
+  }
+  nav {
+    gap: 6px;
+  }
+  nav button {
+    padding: 10px 12px;
+  }
 }

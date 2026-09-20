@@ -1,3 +1,6 @@
+import { ProductManager } from './ProductManager';
+import { ArchiveStore } from './ArchiveStore';
+import { labels } from './localization';
 import { useEffect, useState, useRef } from 'react';
 import { Editor, type Values } from './Editor';
 import type {
@@ -25,17 +28,21 @@ export function Workspace({
   token,
   storeId,
   role,
+  onArchived,
 }: {
   token: string;
   storeId: string;
   role: string;
+  onArchived?: () => Promise<void>;
 }) {
   const api = createClient(token, storeId),
     sensitive = ['OWNER', 'COST_MANAGER'].includes(role),
     catalogWrite = ['OWNER', 'MANAGER'].includes(role);
-  const [tab, setTab] = useState('store'),
+  const [tab, setTab] = useState('home'),
     [error, setError] = useState(''),
     [revision, setRevision] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [section, setSection] = useState('home');
   const [store, setStore] = useState<Store | null>(null),
     [categories, setCategories] = useState<(Named & { status: string })[]>([]),
     [products, setProducts] = useState<Product[]>([]),
@@ -66,6 +73,7 @@ export function Workspace({
   useEffect(() => {
     let active = true;
     setError('');
+    setLoading(true);
     const client = createClient(token, storeId);
     const load = async () => {
       const [s, c, p] = await Promise.all([
@@ -77,6 +85,7 @@ export function Workspace({
         setStore(s);
         setCategories(c);
         setProducts(p);
+        setLoading(false);
       }
       if (sensitive) {
         const [i, pk, pr, f, a, modifiers] = await Promise.all([
@@ -98,7 +107,10 @@ export function Workspace({
       }
     };
     load().catch((err) => {
-      if (active) setError(err.message);
+      if (active) {
+        setError(err.message);
+        setLoading(false);
+      }
     });
     return () => {
       active = false;
@@ -123,8 +135,13 @@ export function Workspace({
   const productFields = [
     text('name', '商品名称'),
     { name: 'categoryId', label: '分类', options: named(categories) },
-    text('description', '描述'),
-    { ...text('imageUrl', '图片 URL'), required: false },
+    { ...text('description', '描述'), required: false },
+    {
+      name: 'imageUrl',
+      label: '商品图片',
+      type: 'image' as const,
+      required: false,
+    },
     status,
   ];
   const chooseProduct = (
@@ -150,7 +167,7 @@ export function Workspace({
   );
   const chooseSku = (
     <label>
-      选择 SKU
+      选择 规格
       <select
         value={skuId}
         onChange={(e) => {
@@ -179,7 +196,7 @@ export function Workspace({
       ? [
           ['modifiers', '选项成本'],
           ['ingredients', '食材与采购'],
-          ['recipe', '配方 BOM'],
+          ['recipe', '配方用料'],
           ['packaging', '包装'],
           ['fixed', '月固定成本'],
           ['cost', '成本计算'],
@@ -194,20 +211,67 @@ export function Workspace({
           <button onClick={() => setRevision((v) => v + 1)}>重试</button>
         </p>
       )}
-      <nav aria-label="成本中心功能">
-        {tabs.map(([key, label]) => (
+      <nav aria-label="商家后台导航">
+        {[
+          ['home', '首页'],
+          ...(catalogWrite
+            ? [
+                ['catalog', '商品'],
+                ['inventory', '库存'],
+              ]
+            : []),
+          ...(sensitive ? [['analysis', '经营分析']] : []),
+          ['store', '门店设置'],
+        ].map(([key, label]) => (
           <button
             key={key}
-            aria-pressed={tab === key}
-            onClick={() => setTab(key!)}
+            aria-pressed={section === key}
+            onClick={() => {
+              setSection(key!);
+              setTab(key === 'analysis' ? 'cost' : key!);
+            }}
           >
             {label}
           </button>
         ))}
       </nav>
-      {['catalog', 'inventory', 'recipe', 'packaging', 'cost'].includes(
-        tab,
-      ) && (
+      {section === 'home' && (
+        <section>
+          <h2>今天先做这几件事</h2>
+          <p>
+            已录入 {products.length} 个商品。先完善商品，再按需要填写成本资料。
+          </p>
+          <p>订单、营销与配送服务尚未开放。</p>
+          {catalogWrite && (
+            <button
+              onClick={() => {
+                setSection('catalog');
+                setTab('catalog');
+              }}
+            >
+              去管理商品
+            </button>
+          )}
+        </section>
+      )}
+      {section === 'analysis' && (
+        <nav aria-label="经营分析功能">
+          {tabs
+            .filter(
+              ([key]) => !['store', 'catalog', 'inventory'].includes(key!),
+            )
+            .map(([key, label]) => (
+              <button
+                key={key}
+                aria-pressed={tab === key}
+                onClick={() => setTab(key!)}
+              >
+                {label}
+              </button>
+            ))}
+        </nav>
+      )}
+      {['legacy', 'inventory', 'recipe', 'packaging', 'cost'].includes(tab) && (
         <div className="selectors">
           {chooseProduct}
           {chooseSku}
@@ -216,13 +280,30 @@ export function Workspace({
       {tab === 'store' &&
         store &&
         (role === 'OWNER' ? (
-          <Editor
-            key={store.id + revision}
-            title="门店资料"
-            fields={storeFields}
-            initial={{ ...store }}
-            onSave={(d) => save('/store', 'PATCH', d)}
-          />
+          <>
+            <Editor
+              key={store.id + revision}
+              title="门店资料"
+              fields={[
+                ...storeFields,
+                {
+                  name: 'status',
+                  label: '门店状态',
+                  options: [
+                    { value: 'ACTIVE', label: '营业中' },
+                    { value: 'INACTIVE', label: '已停用' },
+                  ],
+                  optional: true,
+                },
+              ]}
+              automatic="中国标准时间（北京时间）"
+              initial={{ ...store }}
+              onSave={(d) => save('/store', 'PATCH', d)}
+            />
+            {onArchived && (
+              <ArchiveStore store={store} api={api} onArchived={onArchived} />
+            )}
+          </>
         ) : (
           <p>
             {store.name} · {store.address} · {store.businessHours}
@@ -230,175 +311,179 @@ export function Workspace({
         ))}
       {tab === 'catalog' && catalogWrite && (
         <>
-          <Editor
-            title="分类"
-            fields={[text('name', '分类名称'), status]}
-            onSave={(d) => save('/categories', 'POST', d)}
+          <ProductManager
+            products={products}
+            categories={categories}
+            api={api}
+            loading={loading}
+            changed={() => setRevision((v) => v + 1)}
           />
-          <label>
-            编辑分类
-            <select
-              value={categoryId}
-              onChange={(e) => setCategoryId(e.target.value)}
-            >
-              <option value="">请选择</option>
-              {categories.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          {categoryId && (
+          <details>
+            <summary>高级商品设置 · 多规格、选项与归档</summary>
+            <div className="selectors">
+              {chooseProduct}
+              {chooseSku}
+            </div>
             <Editor
-              key={categoryId + revision}
-              title="分类资料"
-              initial={{ ...categories.find((c) => c.id === categoryId)! }}
+              title="分类"
               fields={[text('name', '分类名称'), status]}
-              onSave={(d) => save('/categories/' + categoryId, 'PATCH', d)}
+              onSave={(d) => save('/categories', 'POST', d)}
             />
-          )}
-          {categories.length > 0 ? (
-            <Editor
-              key={'new-product' + categories.length}
-              title="商品"
-              fields={productFields}
-              onSave={(d) => save('/products', 'POST', d)}
-            />
-          ) : (
-            <p>请先建立分类。</p>
-          )}
-          {product && (
-            <>
+            <label>
+              编辑分类
+              <select
+                value={categoryId}
+                onChange={(e) => setCategoryId(e.target.value)}
+              >
+                <option value="">请选择</option>
+                {categories.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {categoryId && (
               <Editor
-                key={product.id + revision}
-                title="商品资料"
-                initial={{
-                  name: product.name,
-                  description: product.description,
-                  imageUrl: product.imageUrl,
-                  categoryId: product.categoryId,
-                  status: product.status,
-                }}
-                fields={productFields}
-                onSave={(d) => save('/products/' + product.id, 'PATCH', d)}
+                key={categoryId + revision}
+                title="分类资料"
+                initial={{ ...categories.find((c) => c.id === categoryId)! }}
+                fields={[text('name', '分类名称'), status]}
+                onSave={(d) => save('/categories/' + categoryId, 'PATCH', d)}
               />
-              <Editor
-                title="商品归档"
-                fields={[
-                  {
-                    name: 'confirmed',
-                    label: '确认归档当前商品（历史资料保留）',
-                    type: 'checkbox',
-                  },
-                ]}
-                onSave={async (d) => {
-                  if (!d.confirmed) throw Error('请先确认');
-                  await save('/products/' + product.id, 'DELETE', undefined);
-                  setProductId('');
-                  setSkuId('');
-                }}
-              />
-              <Editor
-                title="新规格"
-                fields={[...skuFields, number('stockQuantity', '初始库存')]}
-                onSave={(d) =>
-                  save('/products/' + product.id + '/variants', 'POST', d)
-                }
-              />
-              <Editor
-                title="选项组"
-                fields={[
-                  text('name', '选项组名称'),
-                  number('minSelections', '最少选择数量'),
-                  number('maxSelections', '最多选择数量', 1),
-                ]}
-                onSave={(d) =>
-                  save(
-                    '/products/' + product.id + '/modifier-groups',
-                    'POST',
-                    d,
-                  )
-                }
-              />
-              <label>
-                选项组
-                <select
-                  value={groupId}
-                  onChange={(e) => setGroupId(e.target.value)}
-                >
-                  <option value="">请选择</option>
-                  {product.modifierGroupRecords.map((g) => (
-                    <option key={g.id} value={g.id}>
-                      {g.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              {group && (
-                <>
-                  <Editor
-                    title="附加选项"
-                    fields={[
-                      text('name', '选项名称'),
-                      number('salePriceFen', '附加价格（分）'),
-                      status,
-                    ]}
-                    onSave={(d) =>
-                      save(
-                        '/modifier-groups/' + group.id + '/modifiers',
-                        'POST',
-                        d,
-                      )
-                    }
-                  />
-                  {group.modifierRecords.map((m) => (
-                    <details key={m.id}>
-                      <summary>
-                        {m.name} · {cash(m.salePriceFen)}
-                      </summary>
-                      <Editor
-                        title="选项资料"
-                        initial={{ ...m }}
-                        fields={[
-                          text('name', '选项名称'),
-                          number('salePriceFen', '附加价格（分）'),
-                          status,
-                        ]}
-                        onSave={(d) => save('/modifiers/' + m.id, 'PATCH', d)}
-                      />
-                    </details>
-                  ))}
-                </>
-              )}
-            </>
-          )}
-          {sku && (
-            <>
-              <Editor
-                key={sku.id + revision}
-                title="规格资料"
-                initial={{ ...sku }}
-                fields={skuFields}
-                onSave={(d) => save('/variants/' + sku.id, 'PATCH', d)}
-              />
-              <Editor
-                title="归档 SKU"
-                fields={[
-                  {
-                    name: 'confirmed',
-                    label: '确认归档当前 SKU（历史资料保留）',
-                    type: 'checkbox',
-                  },
-                ]}
-                onSave={async (d) => {
-                  if (!d.confirmed) throw Error('请先确认');
-                  await save('/variants/' + sku.id, 'DELETE', undefined);
-                  setSkuId('');
-                }}
-              />
-            </>
-          )}
+            )}
+            {product && (
+              <>
+                <Editor
+                  key={product.id + revision}
+                  title="商品资料"
+                  initial={{
+                    name: product.name,
+                    description: product.description,
+                    imageUrl: product.imageUrl,
+                    categoryId: product.categoryId,
+                    status: product.status,
+                  }}
+                  fields={productFields}
+                  onSave={(d) => save('/products/' + product.id, 'PATCH', d)}
+                />
+                <Editor
+                  title="商品归档"
+                  fields={[
+                    {
+                      name: 'confirmed',
+                      label: '确认归档当前商品（历史资料保留）',
+                      type: 'checkbox',
+                    },
+                  ]}
+                  onSave={async (d) => {
+                    if (!d.confirmed) throw Error('请先确认');
+                    await save('/products/' + product.id, 'DELETE', undefined);
+                    setProductId('');
+                    setSkuId('');
+                  }}
+                />
+                <Editor
+                  title="新规格"
+                  fields={[...skuFields, number('stockQuantity', '初始库存')]}
+                  onSave={(d) =>
+                    save('/products/' + product.id + '/variants', 'POST', d)
+                  }
+                />
+                <Editor
+                  title="选项组"
+                  fields={[
+                    text('name', '选项组名称'),
+                    number('minSelections', '最少选择数量'),
+                    number('maxSelections', '最多选择数量', 1),
+                  ]}
+                  onSave={(d) =>
+                    save(
+                      '/products/' + product.id + '/modifier-groups',
+                      'POST',
+                      d,
+                    )
+                  }
+                />
+                <label>
+                  选项组
+                  <select
+                    value={groupId}
+                    onChange={(e) => setGroupId(e.target.value)}
+                  >
+                    <option value="">请选择</option>
+                    {product.modifierGroupRecords.map((g) => (
+                      <option key={g.id} value={g.id}>
+                        {g.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {group && (
+                  <>
+                    <Editor
+                      title="附加选项"
+                      fields={[
+                        text('name', '选项名称'),
+                        number('salePriceFen', '附加价格（分）'),
+                        status,
+                      ]}
+                      onSave={(d) =>
+                        save(
+                          '/modifier-groups/' + group.id + '/modifiers',
+                          'POST',
+                          d,
+                        )
+                      }
+                    />
+                    {group.modifierRecords.map((m) => (
+                      <details key={m.id}>
+                        <summary>
+                          {m.name} · {cash(m.salePriceFen)}
+                        </summary>
+                        <Editor
+                          title="选项资料"
+                          initial={{ ...m }}
+                          fields={[
+                            text('name', '选项名称'),
+                            number('salePriceFen', '附加价格（分）'),
+                            status,
+                          ]}
+                          onSave={(d) => save('/modifiers/' + m.id, 'PATCH', d)}
+                        />
+                      </details>
+                    ))}
+                  </>
+                )}
+              </>
+            )}
+            {sku && (
+              <>
+                <Editor
+                  key={sku.id + revision}
+                  title="规格资料"
+                  initial={{ ...sku }}
+                  fields={skuFields}
+                  onSave={(d) => save('/variants/' + sku.id, 'PATCH', d)}
+                />
+                <Editor
+                  title="归档 规格"
+                  fields={[
+                    {
+                      name: 'confirmed',
+                      label: '确认归档当前 规格（历史资料保留）',
+                      type: 'checkbox',
+                    },
+                  ]}
+                  onSave={async (d) => {
+                    if (!d.confirmed) throw Error('请先确认');
+                    await save('/variants/' + sku.id, 'DELETE', undefined);
+                    setSkuId('');
+                  }}
+                />
+              </>
+            )}
+          </details>
         </>
       )}
       {tab === 'inventory' &&
@@ -432,7 +517,7 @@ export function Workspace({
             />
           </>
         ) : (
-          <p>请选择 SKU。</p>
+          <p>请选择规格。</p>
         ))}
       {tab === 'modifiers' && sensitive && (
         <section>
@@ -497,7 +582,7 @@ export function Workspace({
               <option value="">请选择</option>
               {ingredients.map((i) => (
                 <option key={i.id} value={i.id}>
-                  {i.name}（{i.baseUnit}）
+                  {i.name}（{labels[i.baseUnit]}）
                 </option>
               ))}
             </select>
@@ -531,11 +616,14 @@ export function Workspace({
                 text('quantity', '采购数量（小数最多6位）', '1'),
                 { name: 'unit', label: '采购单位', options: unitOptions },
                 number('totalCostFen', '采购总金额（分）'),
-                text(
-                  'purchasedAt',
-                  '采购时间（含时区 ISO）',
-                  new Date().toISOString(),
-                ),
+                {
+                  name: 'purchasedAt',
+                  label: '采购时间（北京时间）',
+                  type: 'datetime-local',
+                  value: new Date(Date.now() + 8 * 3600000)
+                    .toISOString()
+                    .slice(0, 16),
+                },
               ]}
               onSave={(d) => save('/costs/purchases', 'POST', d)}
             />
@@ -557,7 +645,7 @@ export function Workspace({
                     {ingredients.find((i) => i.id === p.ingredientId)?.name}
                   </td>
                   <td>
-                    {p.quantity} {p.unit}
+                    {p.quantity} {labels[p.unit]}
                   </td>
                   <td>{cash(p.totalCostFen)}</td>
                   <td>{new Date(p.purchasedAt).toLocaleString()}</td>
@@ -580,7 +668,7 @@ export function Workspace({
             }}
           />
         ) : (
-          <p>请选择 SKU。</p>
+          <p>请选择 规格。</p>
         ))}
       {tab === 'packaging' && (
         <>
@@ -593,7 +681,7 @@ export function Workspace({
                 name: 'scope',
                 label: '用途范围',
                 options: [
-                  { value: 'SKU', label: 'SKU 包装' },
+                  { value: 'SKU', label: '商品包装' },
                   { value: 'ORDER', label: '整单公共包装（预留）' },
                 ],
               },
@@ -604,7 +692,7 @@ export function Workspace({
           {packs.map((p) => (
             <details key={p.id}>
               <summary>
-                {p.name} · {cash(p.unitCostFen)} · {p.scope}
+                {p.name} · {cash(p.unitCostFen)} · {labels[p.scope]}
               </summary>
               <Editor
                 title="包装资料"
@@ -630,7 +718,7 @@ export function Workspace({
               }}
             />
           ) : (
-            <p>选择 SKU 后配置履约包装。</p>
+            <p>选择规格后配置履约包装。</p>
           )}
         </>
       )}
@@ -700,7 +788,9 @@ export function Workspace({
               }}
             >
               {['PICKUP', 'DELIVERY', 'DINE_IN'].map((v) => (
-                <option key={v}>{v}</option>
+                <option key={v} value={v}>
+                  {labels[v]}
+                </option>
               ))}
             </select>
           </label>

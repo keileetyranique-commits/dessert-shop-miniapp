@@ -78,7 +78,7 @@ function fixture(role: string) {
                   : path.includes('/fixed/') || path.includes('/allocation/')
                     ? null
                     : [];
-      return { ok: true, json: async () => value };
+      return new Response(JSON.stringify(value));
     }),
   );
   render(<Workspace token="test" storeId="store" role={role} />);
@@ -88,21 +88,24 @@ async function selectSku() {
   fireEvent.change(screen.getByLabelText('选择商品'), {
     target: { value: 'product' },
   });
-  fireEvent.change(screen.getByLabelText('选择 SKU'), {
+  fireEvent.change(screen.getByLabelText('选择 规格'), {
     target: { value: 'sku' },
   });
 }
 test('cost manager can edit modifier cost but has no catalog write forms', async () => {
   const calls = fixture('COST_MANAGER');
+  fireEvent.click(screen.getByRole('button', { name: '经营分析' }));
   fireEvent.click(screen.getByRole('button', { name: '选项成本' }));
-  const field = await screen.findByLabelText('选项成本（分）');
-  expect(screen.queryByRole('button', { name: '商品与规格' })).toBeNull();
+  const field = await screen.findByLabelText('选项成本（元）');
+  expect(screen.queryByRole('button', { name: '商品' })).toBeNull();
   expect(screen.queryByRole('button', { name: '库存' })).toBeNull();
   expect((field as HTMLInputElement).value).toBe('');
   fireEvent.submit(field.closest('form')!);
-  expect(await screen.findByText('选项成本（分）必须是安全整数')).toBeTruthy();
+  expect(
+    await screen.findByText('选项成本（元）：请输入最多两位小数的非负数'),
+  ).toBeTruthy();
   expect(calls.some((c) => c.method === 'PATCH')).toBe(false);
-  fireEvent.change(field, { target: { value: '35' } });
+  fireEvent.change(field, { target: { value: '0.35' } });
   fireEvent.submit(field.closest('form')!);
   await waitFor(() =>
     expect(
@@ -117,16 +120,17 @@ test('cost manager can edit modifier cost but has no catalog write forms', async
 });
 test('clearing a configured modifier cost restores unconfigured without turning it into zero', async () => {
   fixture('COST_MANAGER');
+  fireEvent.click(screen.getByRole('button', { name: '经营分析' }));
   fireEvent.click(screen.getByRole('button', { name: '选项成本' }));
-  let field = await screen.findByLabelText('选项成本（分）');
-  fireEvent.change(field, { target: { value: '35' } });
+  let field = await screen.findByLabelText('选项成本（元）');
+  fireEvent.change(field, { target: { value: '0.35' } });
   fireEvent.submit(field.closest('form')!);
   await screen.findByRole('heading', { name: '通用服务 · ¥0.35' });
   fireEvent.click(
     screen.getByRole('button', { name: '清除成本 / 标记为未配置' }),
   );
   await screen.findByRole('heading', { name: '通用服务 · 未配置' });
-  field = screen.getByLabelText('选项成本（分）');
+  field = screen.getByLabelText('选项成本（元）');
   expect((field as HTMLInputElement).value).toBe('');
   fireEvent.change(field, { target: { value: '0' } });
   fireEvent.submit(field.closest('form')!);
@@ -137,6 +141,7 @@ test('preview is GET and snapshot save requires an explicit POST', async () => {
   await waitFor(() =>
     expect(calls.some((c) => c.path.endsWith('/costs/modifiers'))).toBe(true),
   );
+  fireEvent.click(screen.getByRole('button', { name: '经营分析' }));
   fireEvent.click(screen.getByRole('button', { name: '成本计算' }));
   await selectSku();
   fireEvent.click(screen.getByRole('button', { name: '计算当前单份成本' }));
@@ -155,9 +160,10 @@ test('SKU archival requires explicit confirmation and removes selection', async 
   await waitFor(() =>
     expect(calls.some((c) => c.path.endsWith('/products'))).toBe(true),
   );
-  fireEvent.click(screen.getByRole('button', { name: '商品与规格' }));
+  fireEvent.click(screen.getByRole('button', { name: '商品' }));
+  fireEvent.click(screen.getByText('高级商品设置 · 多规格、选项与归档'));
   await selectSku();
-  const confirm = screen.getByLabelText('确认归档当前 SKU（历史资料保留）');
+  const confirm = screen.getByLabelText('确认归档当前 规格（历史资料保留）');
   fireEvent.submit(confirm.closest('form')!);
   expect(await screen.findByText('请先确认')).toBeTruthy();
   expect(calls.some((c) => c.method === 'DELETE')).toBe(false);
@@ -172,7 +178,7 @@ test('SKU archival requires explicit confirmation and removes selection', async 
   );
   await waitFor(() =>
     expect(
-      screen.queryByLabelText('确认归档当前 SKU（历史资料保留）'),
+      screen.queryByLabelText('确认归档当前 规格（历史资料保留）'),
     ).toBeNull(),
   );
 });
