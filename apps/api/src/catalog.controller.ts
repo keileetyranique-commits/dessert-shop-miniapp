@@ -31,6 +31,7 @@ import {
   productInput,
   variantInput,
   variantEdit,
+  money,
   groupInput,
   modifierInput,
 } from './validation.js';
@@ -94,6 +95,63 @@ export class CatalogController {
         },
       },
       data: parse(storeInput.partial().strict(), body),
+    });
+  }
+  @Delete('store') @CatalogAccess() async archiveStore(
+    @Req() r: AdminRequest,
+    @Body() body: unknown,
+  ) {
+    if (r.identity.role !== 'OWNER')
+      throw new ForbiddenException('仅老板可归档门店');
+    const data = parse(
+      z.object({ confirmationName: z.string().min(1) }).strict(),
+      body,
+    );
+    return this.db.store.update({
+      where: {
+        id: r.scope.storeId,
+        merchantId: r.scope.merchantId,
+        brandId: r.scope.brandId,
+        name: data.confirmationName,
+        deletedAt: null,
+      },
+      data: { deletedAt: new Date(), status: 'INACTIVE' },
+    });
+  }
+  private async checkImage(r: AdminRequest, imageUrl?: string) {
+    if (!imageUrl) return;
+    if (!imageUrl.startsWith('/api/v1/admin/media/'))
+      throw new ForbiddenException('请使用本店上传的商品图片');
+    await this.db.mediaAsset.findFirstOrThrow({
+      where: { ...r.scope, id: imageUrl.slice('/api/v1/admin/media/'.length) },
+    });
+  }
+  @Post('products/simple') @CatalogAccess() async simpleProduct(
+    @Req() r: AdminRequest,
+    @Body() body: unknown,
+  ) {
+    const { salePriceFen, ...data } = parse(
+      productInput.extend({ salePriceFen: money }),
+      body,
+    );
+    await this.checkImage(r, data.imageUrl);
+    return this.db.$transaction(async (tx) => {
+      await tx.category.findFirstOrThrow({
+        where: { ...r.scope, id: data.categoryId, deletedAt: null },
+      });
+      const product = await tx.product.create({
+        data: { ...r.scope, ...data },
+      });
+      await tx.variant.create({
+        data: {
+          ...r.scope,
+          productId: product.id,
+          name: '默认规格',
+          salePriceFen,
+          unlimitedStock: true,
+        },
+      });
+      return product;
     });
   }
   @Get('categories') categories(@Req() r: AdminRequest) {
@@ -163,6 +221,7 @@ export class CatalogController {
     @Body() body: unknown,
   ) {
     const data = parse(productInput, body);
+    await this.checkImage(r, data.imageUrl);
     await this.db.category.findFirstOrThrow({
       where: { ...r.scope, id: data.categoryId, deletedAt: null },
     });
@@ -174,6 +233,12 @@ export class CatalogController {
     @Body() body: unknown,
   ) {
     const data = parse(productInput.partial().strict(), body);
+    const current = await this.db.product.findFirstOrThrow({
+      where: { ...r.scope, id: parse(id, value), deletedAt: null },
+    });
+    // Keep an existing legacy URL unchanged; new images must be owned uploads.
+    if (data.imageUrl !== current.imageUrl)
+      await this.checkImage(r, data.imageUrl);
     if (data.categoryId)
       await this.db.category.findFirstOrThrow({
         where: { ...r.scope, id: data.categoryId, deletedAt: null },
