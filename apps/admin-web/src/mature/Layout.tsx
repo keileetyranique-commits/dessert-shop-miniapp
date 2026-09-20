@@ -1,8 +1,9 @@
 // Derived from jamezzh7/open-shop-wechat-template (ffa309206aea6a323493850cdf364ad0565b9fcd).
 // Copyright (c) 2026 James Zhuang and Open Shop contributors. MIT; see public/third-party/open-shop-LICENSE.txt.
-// Adapted for this project's visual-only merchant shell; no CloudBase or mutation APIs.
+// Adapted for this project's read-only merchant shell; no CloudBase or mutation APIs.
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useState } from 'react';
+import { StoreSelector } from './MerchantAccess';
 
 export const NAV = [
   { to: '/admin/dashboard', label: '首页' },
@@ -68,7 +69,7 @@ export default function Layout() {
         </nav>
         <div className="px-3 py-4 border-t border-[#E5E5E5]">
           <p className="px-3 text-xs text-[#6B7280] mb-2">
-            界面预览 · 尚未连接经营数据
+            商品只读 · 其他功能后续接入
           </p>
           <a
             href="/legacy.html"
@@ -81,7 +82,7 @@ export default function Layout() {
 
       {/* Main content */}
       <div className="min-w-0 flex-1 md:ml-52">
-        <header className="h-16 px-4 md:px-8 bg-white border-b border-[#E5E5E5] flex items-center justify-between gap-3">
+        <header className="min-h-16 py-3 flex-wrap px-4 md:px-8 bg-white border-b border-[#E5E5E5] flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <button
               type="button"
@@ -98,9 +99,7 @@ export default function Layout() {
               <span className="text-[#1A1A1A]">{current}</span>
             </span>
           </div>
-          <span className="rounded bg-primary-light px-3 py-1 text-xs text-primary">
-            界面预览
-          </span>
+          <StoreSelector />
         </header>
         <main className="p-4 md:p-8 max-w-[1440px] mx-auto">
           <Outlet />

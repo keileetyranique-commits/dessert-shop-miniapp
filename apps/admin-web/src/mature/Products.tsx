@@ -1,6 +1,6 @@
 // Derived from jamezzh7/open-shop-wechat-template (ffa309206aea6a323493850cdf364ad0565b9fcd).
 // Copyright (c) 2026 James Zhuang and Open Shop contributors. MIT; see public/third-party/open-shop-LICENSE.txt.
-// Adapted for this project's visual-only merchant shell; no CloudBase or mutation APIs.
+// Adapted for this project's read-only merchant shell; no CloudBase or mutation APIs.
 import {
   useState,
   useMemo,
@@ -142,14 +142,15 @@ export interface Product {
   description: string;
   image: string;
   available: boolean;
-  priceFen: number;
+  priceFen: number | null;
+  multiplePrices?: boolean;
 }
 const EMPTY_PRODUCTS: Product[] = [];
 const EMPTY_CATEGORIES: Category[] = [];
 function normalizeSearch(value: string) {
   return value.trim().toLowerCase();
 }
-// Data is intentionally unconnected in this visual-only milestone.
+// Presentational Open Shop page; API mapping lives in catalog-adapter.
 export default function Products({
   rows = EMPTY_PRODUCTS,
   categories = EMPTY_CATEGORIES,
@@ -159,7 +160,7 @@ export default function Products({
   rows?: Product[];
   categories?: Category[];
   loading?: boolean;
-  error?: boolean;
+  error?: boolean | string;
 }) {
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
@@ -194,7 +195,7 @@ export default function Products({
     setForm({
       title: row.title,
       category_id: row.category_id,
-      price: formatFen(fen(row.priceFen)),
+      price: row.priceFen === null ? '' : formatFen(fen(row.priceFen)),
       description: row.description,
     });
     setModal({ mode: 'edit' });
@@ -208,7 +209,7 @@ export default function Products({
         </p>
       </div>
       <p className="text-sm text-primary bg-primary-light border border-[#E5DDF7] rounded-lg px-4 py-3">
-        尚未连接商品数据。本次可查看列表与编辑窗口，填写内容不会保存。
+        当前仅支持查看商品。新增和编辑窗口暂未接入保存，填写内容不会保存。
       </p>
       <div className="flex flex-col gap-3 mb-4 lg:flex-row lg:items-center lg:justify-between">
         <SearchBar
@@ -271,7 +272,9 @@ export default function Products({
               <TableStateRow colSpan={6}>商品加载中…</TableStateRow>
             ) : error ? (
               <TableStateRow colSpan={6}>
-                商品暂时无法加载，请稍后重试
+                {typeof error === 'string'
+                  ? error
+                  : '商品暂时无法加载，请稍后重试'}
               </TableStateRow>
             ) : (
               filteredRows.map((row) => {
@@ -279,17 +282,11 @@ export default function Products({
                 return (
                   <tr key={row.id} className="border-b border-[#E5E5E5]">
                     <td className="py-3 px-4">
-                      {row.image ? (
-                        <img
-                          src={row.image}
-                          alt={row.title}
-                          className="w-12 h-12 rounded object-cover"
-                        />
-                      ) : (
-                        <div className="w-12 h-12 rounded bg-[#F5F5F5] text-xs text-[#6B7280] flex items-center justify-center">
-                          暂无图片
-                        </div>
-                      )}
+                      <ProductImage
+                        key={row.image}
+                        image={row.image}
+                        title={row.title}
+                      />
                     </td>
                     <td className="py-3 px-4">
                       <p className="text-sm font-medium">{row.title}</p>
@@ -300,7 +297,11 @@ export default function Products({
                     <td className="py-3 px-4 text-sm">
                       {cat?.name ?? '未分类'}
                     </td>
-                    <td className="py-3 px-4 text-sm">{`¥${formatFen(fen(row.priceFen))}`}</td>
+                    <td className="py-3 px-4 text-sm">
+                      {row.priceFen === null
+                        ? '待设置'
+                        : `¥${formatFen(fen(row.priceFen))}${row.multiplePrices ? ' 起' : ''}`}
+                    </td>
                     <td className="py-3 px-4">
                       <span
                         className={`text-xs px-2 py-0.5 rounded ${row.available ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}
@@ -329,7 +330,7 @@ export default function Products({
                   <p>
                     {rows.length
                       ? '试试其他关键词或分类'
-                      : '连接门店后将在这里显示真实商品，不展示示例商品。'}
+                      : '当前门店尚无商品。'}
                   </p>
                 </div>
               </TableStateRow>
@@ -436,6 +437,23 @@ export default function Products({
           </div>
         </Modal>
       )}
+    </div>
+  );
+}
+
+function ProductImage({ image, title }: { image: string; title: string }) {
+  const [failed, setFailed] = useState(false);
+  return image && !failed ? (
+    <img
+      src={image}
+      alt={title}
+      referrerPolicy="no-referrer"
+      onError={() => setFailed(true)}
+      className="w-12 h-12 rounded object-cover"
+    />
+  ) : (
+    <div className="w-12 h-12 rounded bg-[#F5F5F5] text-xs text-[#6B7280] flex items-center justify-center">
+      暂无图片
     </div>
   );
 }

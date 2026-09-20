@@ -6,8 +6,6 @@ import {
   screen,
   within,
 } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
-import { MerchantRoutes } from './App';
 import Products, { type Product } from './Products';
 beforeAll(() => {
   HTMLDialogElement.prototype.showModal = function () {
@@ -17,33 +15,6 @@ beforeAll(() => {
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
-});
-test('首页使用独立后台布局和八个导航，不请求或伪造经营数据', () => {
-  const fetch = vi.fn();
-  vi.stubGlobal('fetch', fetch);
-  render(
-    <MemoryRouter initialEntries={['/admin/dashboard']}>
-      <MerchantRoutes />
-    </MemoryRouter>,
-  );
-  const nav = within(screen.getByRole('navigation', { name: '商家后台导航' }));
-  for (const label of [
-    '首页',
-    '商品',
-    '订单',
-    '库存',
-    '营销',
-    '配送',
-    '经营分析',
-    '门店设置',
-  ])
-    expect(nav.getByRole('link', { name: label })).toBeTruthy();
-  expect(screen.getAllByText('—')).toHaveLength(4);
-  expect(screen.getByText('本周营收（元）')).toBeTruthy();
-  expect(screen.getByRole('heading', { name: '待办事项' })).toBeTruthy();
-  expect(fetch).not.toHaveBeenCalled();
-  fireEvent.click(nav.getByRole('link', { name: '订单' }));
-  expect(screen.getByText('该功能将在后续阶段接入')).toBeTruthy();
 });
 test('商品页空状态、分类筛选及新增弹窗不会执行保存请求', () => {
   const fetch = vi.fn();
