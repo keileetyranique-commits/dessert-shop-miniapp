@@ -35,6 +35,10 @@ Phase 0 已通过 PR #11 合并到 main；checks、compose、PostgreSQL、Redis�
 
 Phase 1 已通过 PR #15 合并到 main，Issue #2 已完成。后续商家界面必须同时遵守 [商家易读化与老板模式规则](MERCHANT-UX-RULES.md)。
 
+## Phase 1.1：商家后台易用性重构
+
+关联 Issue #16。门店归档、商品图片上传、金额和单位本地化、老板模式分层；实现和验收说明见 [PHASE-1-1.md](PHASE-1-1.md)。本轮完成后仅创建 Draft PR，等待人工审查，不进入 Phase 2。
+
 ## Phase 2：Pricing Engine
 
 - 优惠

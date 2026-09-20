@@ -152,3 +152,16 @@ Phase 1 商品、门店与成本 API 的实际路径、鉴权及字段约定见 
 - 配送回调
 
 Phase 1 审查修复：成本 GET 仅预览，显式 POST `/admin/costs/variants/:id/cost/snapshots` 保存快照；新增受成本权限保护的 Modifier 成本接口和 `DELETE /admin/variants/:id` 归档。完整权限及参数见 [Phase 1](PHASE-1.md)。
+
+## Phase 1.1 补充接口
+
+实现细节见 [PHASE-1-1.md](PHASE-1-1.md)。下表路径前缀为 /api/v1/admin。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| DELETE | /store | OWNER 提交 confirmationName 二次确认，门店软归档，历史数据保留 |
+| POST | /products/simple | OWNER/MANAGER 提交商品字段与整数 salePriceFen，事务创建商品和默认规格 |
+| POST | /media | OWNER/MANAGER，multipart 单文件上传，最大 5 MiB，JPG/PNG/WebP；返回 id/imageUrl |
+| GET | /media/:id | 验证 Merchant/Brand/Store 与当前门店授权后读取 WebP，不提供公共静态路径 |
+
+图片上传和商品编辑拒绝跨门店图片标识。金额 API 仍使用整数分，商家界面使用元。
