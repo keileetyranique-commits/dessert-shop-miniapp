@@ -10,6 +10,8 @@ import {
   type ReactNode,
 } from 'react';
 import { fen, formatFen } from '@platform/shared';
+import { ImageEditor, ProductImage } from './ProductMedia';
+import type { MediaAccess } from './media-client';
 function Modal({
   title,
   onClose,
@@ -156,15 +158,22 @@ export default function Products({
   categories = EMPTY_CATEGORIES,
   loading = false,
   error = false,
+  mediaAccess,
+  onImageSaved,
 }: {
   rows?: Product[];
   categories?: Category[];
   loading?: boolean;
   error?: boolean | string;
+  mediaAccess?: MediaAccess;
+  onImageSaved?: (id: string, image: string) => void;
 }) {
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
-  const [modal, setModal] = useState<{ mode: 'create' | 'edit' } | null>(null);
+  const [modal, setModal] = useState<{
+    mode: 'create' | 'edit';
+    row?: Product;
+  } | null>(null);
   const [form, setForm] = useState({
     title: '',
     category_id: '',
@@ -198,7 +207,7 @@ export default function Products({
       price: row.priceFen === null ? '' : formatFen(fen(row.priceFen)),
       description: row.description,
     });
-    setModal({ mode: 'edit' });
+    setModal({ mode: 'edit', row });
   }
   return (
     <div className="space-y-4">
@@ -209,7 +218,7 @@ export default function Products({
         </p>
       </div>
       <p className="text-sm text-primary bg-primary-light border border-[#E5DDF7] rounded-lg px-4 py-3">
-        当前仅支持查看商品。新增和编辑窗口暂未接入保存，填写内容不会保存。
+        已有商品可单独保存图片；名称、分类、售价和其他资料暂不支持保存。
       </p>
       <div className="flex flex-col gap-3 mb-4 lg:flex-row lg:items-center lg:justify-between">
         <SearchBar
@@ -286,6 +295,7 @@ export default function Products({
                         key={row.image}
                         image={row.image}
                         title={row.title}
+                        access={mediaAccess}
                       />
                     </td>
                     <td className="py-3 px-4">
@@ -345,9 +355,9 @@ export default function Products({
           onClose={() => setModal(null)}
         >
           <p className="text-xs text-[#6B7280] mb-5">
-            编辑窗口预览，暂未接入保存功能。
+            本轮仅支持保存图片，其他资料仅供查看。
           </p>
-          <fieldset>
+          <fieldset disabled={modal.mode === 'edit'}>
             <legend className="text-sm font-medium mb-3">必填</legend>
             <Field label="商品名称">
               <input
@@ -387,28 +397,26 @@ export default function Products({
               />
             </Field>
           </fieldset>
-          <div className="mb-4">
-            <p className="text-sm font-medium mb-1.5">商品图片（推荐）</p>
-            <div className="flex items-center gap-4">
-              <div className="w-20 h-20 rounded border border-dashed border-[#E5E5E5] bg-[#F9F9F9] flex items-center justify-center text-xs text-[#6B7280]">
-                图片预览
-              </div>
-              <div>
-                <button disabled className="text-sm text-primary opacity-60">
-                  选择图片
-                </button>
-                <p className="text-xs text-[#6B7280] mt-1">
-                  图片上传将在后续接入
-                </p>
-              </div>
-            </div>
-          </div>
+          {modal.row && mediaAccess ? (
+            <ImageEditor
+              key={modal.row.id}
+              id={modal.row.id}
+              initial={modal.row.image}
+              access={mediaAccess}
+              onSaved={(image) => onImageSaved?.(modal.row!.id, image)}
+            />
+          ) : (
+            <p className="text-xs text-[#6B7280] mb-4">
+              图片操作仅对已有商品开放
+            </p>
+          )}
           <details className="mb-4">
             <summary className="text-sm font-medium mb-3">
               选填 · 更多设置
             </summary>
             <Field label="商品描述">
               <textarea
+                readOnly={modal.mode === 'edit'}
                 className={inputCls}
                 rows={2}
                 value={form.description}
@@ -437,23 +445,6 @@ export default function Products({
           </div>
         </Modal>
       )}
-    </div>
-  );
-}
-
-function ProductImage({ image, title }: { image: string; title: string }) {
-  const [failed, setFailed] = useState(false);
-  return image && !failed ? (
-    <img
-      src={image}
-      alt={title}
-      referrerPolicy="no-referrer"
-      onError={() => setFailed(true)}
-      className="w-12 h-12 rounded object-cover"
-    />
-  ) : (
-    <div className="w-12 h-12 rounded bg-[#F5F5F5] text-xs text-[#6B7280] flex items-center justify-center">
-      暂无图片
     </div>
   );
 }

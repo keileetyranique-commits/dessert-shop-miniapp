@@ -41,3 +41,16 @@ Modal 保留原布局与样式，用原生 dialog 增加焦点约束和 Escape �
 接口映射与小型登录状态由本项目实现，因为必须匹配现有 NestJS Bearer/X-Store-Id 约定；未搬入上游 CloudBase 认证体系。共享请求客户端增加空响应、无效 JSON、网络、401/403/服务端错误处理，不显示原始服务端异常。切店清空旧数据并忽略旧请求；凭据不持久存储。
 
 正常 HTTP(S) 图片直接显示（不附加后台凭据，禁发来源信息）；受保护 /api/ 媒体、危险协议、失败图片显示“暂无图片”。没有上传、写接口、数据库或权限变更，也未合入 PR #17。此前“未连接 API”的说明仅描述第一步历史状态。
+
+## 第三步：已有商品图片
+
+实际比较了 Open Shop 固定版本 `ffa309206aea6a323493850cdf364ad0565b9fcd` 的 `admin-web/src/pages/Products.tsx`、`admin-web/src/api/catalog.ts`，以及本项目 PR #17 固定版本 `356467754b9b60aa6419b6d43e5bbb76dcbb676b` 的图片模块。
+
+- Open Shop：保留已迁入的编辑弹窗、图片区域位置、预览/选择/上传后保存交互和 Tailwind 风格。其 uploadProductImage 使用 CloudBase、时间戳加原始文件名；getImageUrl 使用临时公开地址；save 一并写商品多字段。本轮不复制这些 API 实现，改用本项目受保护媒体接口和独立图片保存。
+- PR #17：实际迁入 media.controller.ts、image-validation.ts、storage.ts、image-validation.test.ts。保留 5 MiB、签名/MIME/扩展名/文件名、2000 万像素、静态单帧、sharp 旋转/缩放/去元数据/WebP 重编码、UUID 存储路径与目录边界。完成上传前再次检查完整商户/品牌/门店归属。商品引用校验单独迁入；受保护引用即便不变也核查归属。
+- Prisma MediaAsset 与 AppModule 注册采用明确补丁；新迁移 202609210001_product_media 仅创建媒体表、租户复合外键、唯一存储键、租户索引、大小和 WebP MIME CHECK。未复制旧 merchant_ux migration，未修改旧迁移。
+- PR #17 ImageUpload.tsx：复用其鉴权 Blob 读取/object URL 释放和 XMLHttpRequest 真实进度逻辑；不迁入 Ant Design 界面。ProductMedia.tsx 嵌入现有成熟弹窗，增加本地预览、卸载中止、中文错误与独立保存；media-client.ts 的商品 PATCH 仅构造 imageUrl。
+- 新增 sharp 0.34.5（Apache-2.0）和 Express/Multer 类型声明（MIT），无新增前端依赖。sharp 的预编译依赖包含 libvips（LGPL-2.1-or-later），保留随包许可证；未复制、修改这些库源码。
+- StorageAdapter 默认本地目录，可由 UPLOAD_DIR 配置；Docker 使用 uploads_data 持久卷。上传目录被 Git 和构建上下文忽略。移除只解除商品引用，原资产保留；未引用资产清理、配额、云存储适配器留待单独处理。
+
+选择原因：成熟界面已经人工通过，CloudBase 与本项目权限模型不同；保留现有已验证的图片安全后端，比重做安全后端更合适。本轮未迁入门店归档、products/simple、默认规格或其他 PR #17 功能。此前“未接图片”说明仅记录第二步历史状态。

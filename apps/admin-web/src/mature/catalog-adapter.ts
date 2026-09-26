@@ -1,3 +1,4 @@
+import { MEDIA_PATH } from './media-client';
 import type { Product as ApiProduct } from '../admin-types';
 import type { Product } from './Products';
 // Only public HTTP(S) images are read. Protected admin media needs a later adapter.
@@ -30,7 +31,11 @@ export function adaptProduct(product: ApiProduct): Product {
     category_id: product.categoryId,
     title: product.name,
     description: product.description ?? '',
-    image: product.imageUrl ? publicImage(product.imageUrl) : '',
+    image: product.imageUrl
+      ? MEDIA_PATH.test(product.imageUrl)
+        ? product.imageUrl
+        : publicImage(product.imageUrl)
+      : '',
     available: product.status === 'ACTIVE',
     priceFen: variants.length
       ? variants.reduce((min, v) => Math.min(min, v.salePriceFen), 2147483647)

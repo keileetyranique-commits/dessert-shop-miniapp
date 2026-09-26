@@ -69,7 +69,7 @@ export default function Layout() {
         </nav>
         <div className="px-3 py-4 border-t border-[#E5E5E5]">
           <p className="px-3 text-xs text-[#6B7280] mb-2">
-            商品只读 · 其他功能后续接入
+            商品与图片 · 其他功能后续接入
           </p>
           <a
             href="/legacy.html"

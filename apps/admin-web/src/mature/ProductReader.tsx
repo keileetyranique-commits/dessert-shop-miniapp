@@ -5,7 +5,7 @@ import Products, { type Product, type Category } from './Products';
 import { adaptProduct } from './catalog-adapter';
 import { useMerchantAccess } from './MerchantAccess';
 export default function ProductReader() {
-  const { storeId, stores, token, logout } = useMerchantAccess();
+  const { storeId, stores, token, logout, identity } = useMerchantAccess();
   if (!storeId)
     return (
       <div className="bg-white border border-[#E5E5E5] rounded-lg p-12 text-center">
@@ -17,6 +17,7 @@ export default function ProductReader() {
       key={storeId}
       storeId={storeId}
       token={token}
+      canEdit={['OWNER', 'MANAGER'].includes(identity.role)}
       expired={() => logout(true)}
     />
   );
@@ -25,10 +26,12 @@ function StoreProducts({
   storeId,
   token,
   expired,
+  canEdit,
 }: {
   storeId: string;
   token: string;
   expired: () => void;
+  canEdit: boolean;
 }) {
   const [data, setData] = useState<{ rows: Product[]; categories: Category[] }>(
     { rows: [], categories: [] },
@@ -72,7 +75,20 @@ function StoreProducts({
   }, [token, storeId, attempt]);
   return (
     <>
-      <Products {...data} loading={loading} error={error} />
+      <Products
+        {...data}
+        loading={loading}
+        error={error}
+        mediaAccess={{ token, storeId, canEdit, onExpired: expired }}
+        onImageSaved={(id, image) =>
+          setData((current) => ({
+            ...current,
+            rows: current.rows.map((row) =>
+              row.id === id ? { ...row, image } : row,
+            ),
+          }))
+        }
+      />
       {error && (
         <button
           className="mt-4 text-primary"
