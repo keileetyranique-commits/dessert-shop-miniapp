@@ -309,3 +309,105 @@ test('新增复用图片上传，上传中禁止保存，完成后图片随商�
     vi.mocked(fetch).mock.calls.some(([, init]) => init?.method === 'PATCH'),
   ).toBe(false);
 });
+
+function filledDialog(mode: 'create' | 'edit' = 'create') {
+  const save = vi.fn().mockResolvedValue(undefined);
+  render(
+    <Products
+      rows={[{ ...row, singleVariantId: 'variant-a' }]}
+      categories={[{ id: 'c', name: '分类一' }]}
+      mediaAccess={access}
+      onSave={save}
+    />,
+  );
+  fireEvent.click(
+    screen.getByRole('button', {
+      name: mode === 'create' ? '新增商品' : '编辑',
+    }),
+  );
+  const dialog = screen.getByRole('dialog');
+  const fields = within(dialog);
+  for (const [label, value] of [
+    ['商品名称', '保留名称'],
+    ['分类', 'c'],
+    ['售价（元）', '18.80'],
+    ['商品描述', '保留描述'],
+    ['上架状态', 'INACTIVE'],
+  ])
+    fireEvent.change(fields.getByLabelText(label!), { target: { value } });
+  return { dialog, fields, save };
+}
+test.each(['create', 'edit'] as const)(
+  '文件选择器 cancel 保留 %s 弹窗全部资料，不报错不上传',
+  (mode) => {
+    const { dialog, fields, save } = filledDialog(mode);
+    const transport = vi.fn();
+    vi.stubGlobal('XMLHttpRequest', transport);
+    // File input cancel bubbles; unlike dialog's own cancel it must not close the modal.
+    fireEvent(
+      fields.getByLabelText('选择图片'),
+      new Event('cancel', { bubbles: true }),
+    );
+    expect(screen.getByRole('dialog')).toBe(dialog);
+    expect(dialog.hasAttribute('open')).toBe(true);
+    for (const [label, value] of [
+      ['商品名称', '保留名称'],
+      ['分类', 'c'],
+      ['售价（元）', '18.80'],
+      ['商品描述', '保留描述'],
+      ['上架状态', 'INACTIVE'],
+    ])
+      expect((fields.getByLabelText(label!) as HTMLInputElement).value).toBe(
+        value,
+      );
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(transport).not.toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
+    expect(save).not.toHaveBeenCalled();
+  },
+);
+test.each(['cancel', '关闭编辑窗口', '取消'])(
+  '真正的弹窗关闭仍生效：%s',
+  (action) => {
+    const { dialog } = filledDialog();
+    if (action === 'cancel') {
+      // Escape's browser default action dispatches cancel on the dialog itself.
+      fireEvent(dialog, new Event('cancel', { cancelable: true }));
+    } else
+      fireEvent.click(within(dialog).getByRole('button', { name: action }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+  },
+);
+test('取消选择后仍能正常上传；上传失败保留新增表单', async () => {
+  const { dialog, fields, save } = filledDialog();
+  fireEvent(
+    fields.getByLabelText('选择图片'),
+    new Event('cancel', { bubbles: true }),
+  );
+  choose();
+  expect(xhr.open).toHaveBeenCalledWith('POST', '/api/v1/admin/media');
+  expect(xhr.send).toHaveBeenCalledTimes(1);
+  expect(screen.getByAltText('待上传图片预览')).toBeTruthy();
+  xhr.onerror?.();
+  await screen.findByText('网络连接失败，图片未上传，请重试');
+  expect(screen.getByRole('dialog')).toBe(dialog);
+  expect((fields.getByLabelText('商品名称') as HTMLInputElement).value).toBe(
+    '保留名称',
+  );
+  expect(save).not.toHaveBeenCalled();
+  choose();
+  xhr.onload?.();
+  await screen.findByText('上传成功，保存商品后生效');
+  expect(screen.getByRole('dialog')).toBe(dialog);
+  fireEvent.click(fields.getByRole('button', { name: '保存商品' }));
+  await waitFor(() =>
+    expect(save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        image: path,
+        title: '保留名称',
+        available: false,
+      }),
+      undefined,
+    ),
+  );
+});

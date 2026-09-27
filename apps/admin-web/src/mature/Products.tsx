@@ -33,6 +33,8 @@ function Modal({
       ref={dialog}
       aria-labelledby={titleId}
       onCancel={(event) => {
+        // File-picker cancel bubbles from the input; only the dialog may close itself.
+        if (event.target !== event.currentTarget) return;
         event.preventDefault();
         onClose();
       }}
