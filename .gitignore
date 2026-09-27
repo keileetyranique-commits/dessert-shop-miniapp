@@ -14,3 +14,7 @@ apps/**/.next/
 apps/**/build/
 apps/**/miniprogram_npm/
 data/
+
+# Upstream public build profiles are source files, not local credentials.
+!vendor/litemall/litemall-admin/.env.*
+deploy/litemall/.env

@@ -11,3 +11,7 @@ docs/INTELLIGENCE-EXPORT.md
 docs/GROWTH-BEHAVIOR.md
 docs/PLATFORM-GENERALIZATION.md
 docs/DEVELOPMENT-PLAN.md
+
+vendor/
+deploy/litemall/upstream-files.json
+deploy/litemall/admin-package-lock.json

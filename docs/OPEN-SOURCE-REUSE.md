@@ -62,3 +62,9 @@ Modal 保留原布局与样式，用原生 dialog 增加焦点约束和 Escape �
 从本仓库 PR #17（356467754b9b60aa6419b6d43e5bbb76dcbb676b）局部复用 CatalogController.simpleProduct 和 localization.ts 的人民币字符串/BigInt 转换规则。只迁入简易商品原子创建，不引入其他 PR #17 功能。接口额外返回默认规格，前端直接更新列表。无新数据库迁移。
 
 现有 ImageEditor 增加未绑定商品的草稿模式，仍用同一媒体上传客户端。前端 product-save.ts 为本项目权限和字段白名单做少量适配：增量商品字段、单规格售价独立保存、多规格只读和中文失败提示。这些适配由项目实现，原因是 Open Shop 的 CloudBase 全字段保存不符合本项目 NestJS 多租户和整数分协议。后端继续 CatalogAccess，未新增权限体系。
+
+## Issue #19：整体采用 litemall 原版成熟基座
+
+项目：linlinjava/litemall，GitHub：https://github.com/linlinjava/litemall，固定提交 a1ef964a718b7277925b19ea26afe78ea3a1d325，MIT。许可证复制在 vendor/litemall/LICENSE。实际整体复制八个模块（admin、admin-api、core、db、wx、wx-api、all、all-war）以及根构建/说明/许可证文件，共 1,210 个文件。原页面、路由、表格、表单、商品/分类/订单业务实现未重写；仅两份凭据配置做环境变量化，其余逐文件哈希保持原样。
+
+选择原因：Issue #19 明确选定整体成熟中文商城作为基座，不再按按钮补 React 页面。保留原上游依赖，新增 Docker 工具链、依赖锁、独立环境初始化和真实 CRUD 验收，不向现有 pnpm 应用引入 Vue 或 Java 依赖。所有差异、来源清单、启动方式和重叠能力取舍见 BASELINE-MIGRATION-LITEMALL.md。TastyIgniter 本轮没有引入，也没有复制其代码。
