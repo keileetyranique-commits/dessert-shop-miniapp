@@ -2,3 +2,4 @@
 
 # Preserve upstream bytes for fixed-SHA verification.
 vendor/litemall/** -text
+vendor/siam-server/** -text

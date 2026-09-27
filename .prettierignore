@@ -15,3 +15,5 @@ docs/DEVELOPMENT-PLAN.md
 vendor/
 deploy/litemall/upstream-files.json
 deploy/litemall/admin-package-lock.json
+deploy/siam/upstream-files.json
+deploy/siam/package-lock.json

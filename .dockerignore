@@ -13,3 +13,4 @@ data/
 # Independent upstream stack has its own Docker build context rules.
 vendor/
 deploy/litemall/
+deploy/siam/
