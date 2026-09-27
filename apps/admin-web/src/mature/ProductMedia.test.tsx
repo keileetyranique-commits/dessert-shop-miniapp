@@ -163,7 +163,7 @@ test('上传有本地预览及进度，保存和移除仅 PATCH imageUrl，不�
   );
   expect(fetch).not.toHaveBeenCalled();
   xhr.onload?.();
-  await screen.findByText('上传成功，点击“保存图片”后才会应用到商品');
+  await screen.findByText('上传成功，点击“保存图片”或“保存商品”后生效');
   expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:test-1');
   expect(
     vi.mocked(fetch).mock.calls.filter(([, init]) => init?.method === 'PATCH'),
@@ -251,7 +251,7 @@ test('上传网络失败和无效响应不写商品；保存 404 保留中文失
   expect(fetch).not.toHaveBeenCalled();
   choose();
   xhr.onload?.();
-  await screen.findByText('上传成功，点击“保存图片”后才会应用到商品');
+  await screen.findByText('上传成功，点击“保存图片”或“保存商品”后生效');
   vi.mocked(fetch).mockImplementation(async (_url, init) =>
     init?.method === 'PATCH'
       ? new Response('<html>raw</html>', { status: 404 })
@@ -260,4 +260,52 @@ test('上传网络失败和无效响应不写商品；保存 404 保留中文失
   fireEvent.click(screen.getByRole('button', { name: '保存图片' }));
   await screen.findByText('商品或图片不存在，或不属于当前门店，请刷新后重试');
   expect(screen.queryByText('商品图片已保存')).toBeNull();
+});
+
+test('新增复用图片上传，上传中禁止保存，完成后图片随商品提交', async () => {
+  const save = vi.fn().mockResolvedValue(undefined);
+  render(
+    <Products
+      categories={[{ id: 'c', name: '分类一' }]}
+      mediaAccess={access}
+      onSave={save}
+    />,
+  );
+  fireEvent.click(screen.getByRole('button', { name: '新增商品' }));
+  fireEvent.change(screen.getByLabelText('商品名称'), {
+    target: { value: '新品' },
+  });
+  fireEvent.change(within(screen.getByRole('dialog')).getByLabelText('分类'), {
+    target: { value: 'c' },
+  });
+  fireEvent.change(screen.getByLabelText('售价（元）'), {
+    target: { value: '18.80' },
+  });
+  fireEvent.change(screen.getByLabelText('选择图片'), {
+    target: { files: [new File(['png'], 'photo.png', { type: 'image/png' })] },
+  });
+  expect(
+    (screen.getByRole('button', { name: '保存商品' }) as HTMLButtonElement)
+      .disabled,
+  ).toBe(true);
+  expect(screen.queryByRole('button', { name: '保存图片' })).toBeNull();
+  xhr.onload?.();
+  await screen.findByText('上传成功，保存商品后生效');
+  fireEvent.click(screen.getByRole('button', { name: '保存商品' }));
+  await waitFor(() =>
+    expect(save).toHaveBeenCalledWith(
+      {
+        title: '新品',
+        category_id: 'c',
+        price: '18.80',
+        description: '',
+        image: path,
+        available: true,
+      },
+      undefined,
+    ),
+  );
+  expect(
+    vi.mocked(fetch).mock.calls.some(([, init]) => init?.method === 'PATCH'),
+  ).toBe(false);
 });

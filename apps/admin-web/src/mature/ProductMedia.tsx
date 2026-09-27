@@ -106,11 +106,17 @@ export function ImageEditor({
   initial,
   access,
   onSaved,
+  onDraft,
+  onBusy,
+  disabled = false,
 }: {
-  id: string;
+  id?: string;
   initial: string;
   access: MediaAccess;
   onSaved: (image: string) => void;
+  onDraft?: (image: string) => void;
+  onBusy?: (busy: boolean) => void;
+  disabled?: boolean;
 }) {
   const [image, setImage] = useState(initial),
     [saved, setSaved] = useState(initial),
@@ -142,7 +148,8 @@ export function ImageEditor({
     else setError(e instanceof Error ? e.message : '图片操作失败，请稍后重试');
   }
   async function choose(file?: File) {
-    if (!file || !access.canEdit || progress !== null || saving) return;
+    if (!file || !access.canEdit || disabled || progress !== null || saving)
+      return;
     setError('');
     setNotice('');
     if (
@@ -160,6 +167,7 @@ export function ImageEditor({
     localUrl.current = URL.createObjectURL(file);
     setLocal(localUrl.current);
     setProgress(0);
+    onBusy?.(true);
     const operation = uploadImage(file, access, (value) => {
       if (active.current) setProgress(value);
     });
@@ -168,22 +176,36 @@ export function ImageEditor({
       const result = await operation.promise;
       if (active.current) {
         setImage(result);
-        setNotice('上传成功，点击“保存图片”后才会应用到商品');
+        onDraft?.(result);
+        setNotice(
+          id
+            ? '上传成功，点击“保存图片”或“保存商品”后生效'
+            : '上传成功，保存商品后生效',
+        );
       }
     } catch (e) {
       if (active.current) fail(e);
     } finally {
       if (active.current) {
         setProgress(null);
+        onBusy?.(false);
         clearLocal();
         task.current = null;
       }
     }
   }
   async function persist() {
-    if (!access.canEdit || progress !== null || saving || image === saved)
+    if (
+      !id ||
+      !access.canEdit ||
+      disabled ||
+      progress !== null ||
+      saving ||
+      image === saved
+    )
       return;
     setSaving(true);
+    onBusy?.(true);
     setError('');
     setNotice('');
     const controller = new AbortController();
@@ -198,7 +220,10 @@ export function ImageEditor({
     } catch (e) {
       if (active.current) fail(e);
     } finally {
-      if (active.current) setSaving(false);
+      if (active.current) {
+        setSaving(false);
+        onBusy?.(false);
+      }
     }
   }
   return (
@@ -226,7 +251,7 @@ export function ImageEditor({
               aria-label="选择图片"
               type="file"
               accept=".jpg,.jpeg,.png,.webp"
-              disabled={progress !== null || saving}
+              disabled={disabled || progress !== null || saving}
               className="sr-only"
               onChange={(e) => {
                 void choose(e.target.files?.[0]);
@@ -249,20 +274,25 @@ export function ImageEditor({
             </div>
           )}
           <div className="flex gap-3">
+            {id && (
+              <button
+                disabled={
+                  disabled || progress !== null || saving || image === saved
+                }
+                onClick={() => void persist()}
+                className="bg-primary text-white px-3 py-2 rounded text-sm disabled:opacity-50"
+              >
+                {saving ? '保存中…' : '保存图片'}
+              </button>
+            )}
             <button
-              disabled={progress !== null || saving || image === saved}
-              onClick={() => void persist()}
-              className="bg-primary text-white px-3 py-2 rounded text-sm disabled:opacity-50"
-            >
-              {saving ? '保存中…' : '保存图片'}
-            </button>
-            <button
-              disabled={progress !== null || saving || !image}
+              disabled={disabled || progress !== null || saving || !image}
               onClick={() => {
                 clearLocal();
                 setImage('');
+                onDraft?.('');
                 setError('');
-                setNotice('待移除，点击“保存图片”后生效');
+                setNotice('待移除，保存后生效');
               }}
               className="text-sm text-[#6B7280] disabled:opacity-50"
             >
@@ -270,7 +300,9 @@ export function ImageEditor({
             </button>
           </div>
           <p className="text-xs text-[#6B7280]">
-            仅保存图片，其他商品资料不会修改。
+            {id
+              ? '“保存图片”仅修改图片；“保存商品”保存本次商品资料。'
+              : '图片将随新增商品一起保存。'}
           </p>
         </>
       ) : (

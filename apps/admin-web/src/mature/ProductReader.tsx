@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
+import { fen, formatFen } from '@platform/shared';
 import { createClient, AdminRequestError } from '../admin-client';
 import type { Product as ApiProduct, Named } from '../admin-types';
 import Products, { type Product, type Category } from './Products';
+import { saveProduct } from './product-save';
 import { adaptProduct } from './catalog-adapter';
 import { useMerchantAccess } from './MerchantAccess';
 export default function ProductReader() {
@@ -80,6 +82,31 @@ function StoreProducts({
         loading={loading}
         error={error}
         mediaAccess={{ token, storeId, canEdit, onExpired: expired }}
+        onSave={async (draft, id) => {
+          if (!canEdit) throw new Error('当前账号无权保存商品');
+          const original = data.rows.find((row) => row.id === id);
+          const result = await saveProduct(
+            createClient(token, storeId),
+            draft,
+            id,
+            original
+              ? {
+                  ...original,
+                  price:
+                    original.priceFen === null
+                      ? ''
+                      : formatFen(fen(original.priceFen)),
+                }
+              : undefined,
+          );
+          const row = adaptProduct(result);
+          setData((current) => ({
+            ...current,
+            rows: id
+              ? current.rows.map((item) => (item.id === id ? row : item))
+              : [...current.rows, row],
+          }));
+        }}
         onImageSaved={(id, image) =>
           setData((current) => ({
             ...current,

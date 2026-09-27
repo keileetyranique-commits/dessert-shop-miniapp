@@ -54,3 +54,11 @@ Modal 保留原布局与样式，用原生 dialog 增加焦点约束和 Escape �
 - StorageAdapter 默认本地目录，可由 UPLOAD_DIR 配置；Docker 使用 uploads_data 持久卷。上传目录被 Git 和构建上下文忽略。移除只解除商品引用，原资产保留；未引用资产清理、配额、云存储适配器留待单独处理。
 
 选择原因：成熟界面已经人工通过，CloudBase 与本项目权限模型不同；保留现有已验证的图片安全后端，比重做安全后端更合适。本轮未迁入门店归档、products/simple、默认规格或其他 PR #17 功能。此前“未接图片”说明仅记录第二步历史状态。
+
+## 第四步：新增商品与基本资料编辑
+
+继续改造已迁入的 Open Shop Products.tsx（固定版本 ffa309206aea6a323493850cdf364ad0565b9fcd，MIT），沿用表单、列表、弹窗和图片区域；没有重新设计页面或新增第三方依赖。
+
+从本仓库 PR #17（356467754b9b60aa6419b6d43e5bbb76dcbb676b）局部复用 CatalogController.simpleProduct 和 localization.ts 的人民币字符串/BigInt 转换规则。只迁入简易商品原子创建，不引入其他 PR #17 功能。接口额外返回默认规格，前端直接更新列表。无新数据库迁移。
+
+现有 ImageEditor 增加未绑定商品的草稿模式，仍用同一媒体上传客户端。前端 product-save.ts 为本项目权限和字段白名单做少量适配：增量商品字段、单规格售价独立保存、多规格只读和中文失败提示。这些适配由项目实现，原因是 Open Shop 的 CloudBase 全字段保存不符合本项目 NestJS 多租户和整数分协议。后端继续 CatalogAccess，未新增权限体系。

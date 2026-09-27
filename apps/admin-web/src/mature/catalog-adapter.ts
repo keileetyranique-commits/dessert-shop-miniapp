@@ -41,5 +41,6 @@ export function adaptProduct(product: ApiProduct): Product {
       ? variants.reduce((min, v) => Math.min(min, v.salePriceFen), 2147483647)
       : null,
     multiplePrices: variants.length > 1,
+    singleVariantId: variants.length === 1 ? variants[0]!.id : undefined,
   };
 }

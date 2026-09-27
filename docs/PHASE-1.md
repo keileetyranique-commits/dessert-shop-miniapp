@@ -181,3 +181,8 @@ Phase 1 集成测试通过生产模式 API 验证鉴权，包含跨商户、同�
   EXPLAIN 测试关闭顺序扫描，仅验证索引能提供无额外 Sort 的路径，不将小样本的优化器选择当成性能基准。
 
 Modifier 成本可通过 PATCH `{ "costFen": null }` 恢复为“未配置”。后台使用明确的“清除成本 / 标记为未配置”按钮；空输入不会自动保存成 0，零成本必须显式录入 0。此修复复用现有 nullable 字段和 CHECK，不新增 migration。
+
+### 成熟后台商品资料接入
+
+新增 POST /api/v1/admin/products/simple（OWNER/MANAGER）：接收 name、categoryId、description、imageUrl、status、salePriceFen，事务内创建 Product 与“默认规格”。分类与图片归属当前门店，金额为非负整数分（上限 2147483647）；默认规格失败时商品回滚。返回商品和 variantRecords，无新迁移。
+成熟页基本资料使用既有 PATCH /admin/products/:id，仅提交修改字段；单规格售价使用 PATCH /admin/variants/:id，仅提交 salePriceFen。多规格售价在本页只读。独立“保存图片”仍只发送 imageUrl。

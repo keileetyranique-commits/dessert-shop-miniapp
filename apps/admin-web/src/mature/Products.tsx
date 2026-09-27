@@ -1,6 +1,6 @@
 // Derived from jamezzh7/open-shop-wechat-template (ffa309206aea6a323493850cdf364ad0565b9fcd).
 // Copyright (c) 2026 James Zhuang and Open Shop contributors. MIT; see public/third-party/open-shop-LICENSE.txt.
-// Adapted for this project's read-only merchant shell; no CloudBase or mutation APIs.
+// Adapted to the tenant-scoped NestJS catalog and media APIs.
 import {
   useState,
   useMemo,
@@ -11,6 +11,8 @@ import {
 } from 'react';
 import { fen, formatFen } from '@platform/shared';
 import { ImageEditor, ProductImage } from './ProductMedia';
+import { AdminRequestError } from '../admin-client';
+import { yuanToFen, type ProductDraft } from './product-save';
 import type { MediaAccess } from './media-client';
 function Modal({
   title,
@@ -30,7 +32,10 @@ function Modal({
     <dialog
       ref={dialog}
       aria-labelledby={titleId}
-      onCancel={onClose}
+      onCancel={(event) => {
+        event.preventDefault();
+        onClose();
+      }}
       className="m-auto p-0 bg-transparent max-w-[calc(100%-32px)]"
     >
       <div className="bg-white rounded-lg border border-[#E5E5E5] w-[480px] max-w-full max-h-[85vh] overflow-auto">
@@ -146,6 +151,7 @@ export interface Product {
   available: boolean;
   priceFen: number | null;
   multiplePrices?: boolean;
+  singleVariantId?: string;
 }
 const EMPTY_PRODUCTS: Product[] = [];
 const EMPTY_CATEGORIES: Category[] = [];
@@ -160,6 +166,7 @@ export default function Products({
   error = false,
   mediaAccess,
   onImageSaved,
+  onSave,
 }: {
   rows?: Product[];
   categories?: Category[];
@@ -167,7 +174,13 @@ export default function Products({
   error?: boolean | string;
   mediaAccess?: MediaAccess;
   onImageSaved?: (id: string, image: string) => void;
+  onSave?: (draft: ProductDraft, id?: string) => Promise<void>;
 }) {
+  const [saving, setSaving] = useState(false);
+  const [imageBusy, setImageBusy] = useState(false);
+  const [saveError, setSaveError] = useState('');
+  const [notice, setNotice] = useState('');
+  const canEdit = !!mediaAccess?.canEdit && !!onSave;
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
   const [modal, setModal] = useState<{
@@ -179,6 +192,8 @@ export default function Products({
     category_id: '',
     price: '',
     description: '',
+    image: '',
+    available: true,
   });
   const categoryById = useMemo(
     () => new Map(categories.map((category) => [category.id, category])),
@@ -197,17 +212,60 @@ export default function Products({
     );
   }, [categoryById, rows, search, categoryFilter]);
   function openCreate() {
-    setForm({ title: '', category_id: '', price: '', description: '' });
+    setSaveError('');
+    setNotice('');
+    setImageBusy(false);
+    setForm({
+      title: '',
+      category_id: '',
+      price: '',
+      description: '',
+      image: '',
+      available: true,
+    });
     setModal({ mode: 'create' });
   }
   function openEdit(row: Product) {
+    setSaveError('');
+    setNotice('');
+    setImageBusy(false);
     setForm({
       title: row.title,
       category_id: row.category_id,
       price: row.priceFen === null ? '' : formatFen(fen(row.priceFen)),
       description: row.description,
+      image: row.image,
+      available: row.available,
     });
     setModal({ mode: 'edit', row });
+  }
+  async function persist() {
+    if (!canEdit || !onSave || saving || imageBusy || !modal) return;
+    setSaving(true);
+    setSaveError('');
+    try {
+      if (!modal.row || modal.row.singleVariantId) yuanToFen(form.price);
+      await onSave(
+        {
+          ...form,
+          price: modal.row && !modal.row.singleVariantId ? '' : form.price,
+        },
+        modal.row?.id,
+      );
+      setModal(null);
+      setSearch('');
+      setCategoryFilter('');
+      setNotice('商品已保存');
+    } catch (error) {
+      if (error instanceof AdminRequestError && error.status === 401)
+        mediaAccess?.onExpired();
+      else
+        setSaveError(
+          error instanceof Error ? error.message : '商品保存失败，请稍后重试',
+        );
+    } finally {
+      setSaving(false);
+    }
   }
   return (
     <div className="space-y-4">
@@ -218,7 +276,7 @@ export default function Products({
         </p>
       </div>
       <p className="text-sm text-primary bg-primary-light border border-[#E5DDF7] rounded-lg px-4 py-3">
-        已有商品可单独保存图片；名称、分类、售价和其他资料暂不支持保存。
+        支持新增商品和编辑基本资料，多规格售价暂不开放修改。
       </p>
       <div className="flex flex-col gap-3 mb-4 lg:flex-row lg:items-center lg:justify-between">
         <SearchBar
@@ -247,6 +305,7 @@ export default function Products({
         </label>
         <button
           onClick={openCreate}
+          disabled={!!mediaAccess && !canEdit}
           className="px-4 py-2 bg-primary text-white text-sm rounded hover:bg-primary-hover transition-colors"
         >
           新增商品
@@ -349,15 +408,24 @@ export default function Products({
         </table>
       </div>
 
+      {notice && (
+        <p role="status" className="text-primary">
+          {notice}
+        </p>
+      )}
       {modal && (
         <Modal
           title={modal.mode === 'create' ? '新增商品' : '编辑商品'}
-          onClose={() => setModal(null)}
+          onClose={() => {
+            if (!saving) setModal(null);
+          }}
         >
           <p className="text-xs text-[#6B7280] mb-5">
-            本轮仅支持保存图片，其他资料仅供查看。
+            {canEdit
+              ? '填写商品资料后点击保存。'
+              : '当前账号仅可查看商品资料。'}
           </p>
-          <fieldset disabled={modal.mode === 'edit'}>
+          <fieldset disabled={(!!mediaAccess && !canEdit) || saving}>
             <legend className="text-sm font-medium mb-3">必填</legend>
             <Field label="商品名称">
               <input
@@ -385,25 +453,39 @@ export default function Products({
                 ))}
               </select>
             </Field>
-            <Field label="售价（元）">
-              <input
-                className={inputCls}
-                inputMode="decimal"
-                value={form.price}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, price: e.target.value }))
-                }
-                placeholder="例如 18.80"
-              />
-            </Field>
+            {modal.row?.multiplePrices ? (
+              <p className="text-sm mb-4">多规格商品，请到规格管理中修改价格</p>
+            ) : (
+              <Field label="售价（元）">
+                <input
+                  className={inputCls}
+                  inputMode="decimal"
+                  readOnly={!!modal.row && !modal.row.singleVariantId}
+                  value={form.price}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, price: e.target.value }))
+                  }
+                  placeholder="例如 18.80"
+                />
+              </Field>
+            )}
           </fieldset>
-          {modal.row && mediaAccess ? (
+          {!categories.length && <p role="alert">请先创建商品分类</p>}
+          {mediaAccess ? (
             <ImageEditor
-              key={modal.row.id}
-              id={modal.row.id}
-              initial={modal.row.image}
+              key={modal.row?.id ?? 'new'}
+              id={modal.row?.id}
+              initial={modal.row?.image ?? ''}
               access={mediaAccess}
-              onSaved={(image) => onImageSaved?.(modal.row!.id, image)}
+              disabled={saving}
+              onBusy={setImageBusy}
+              onDraft={(image) => setForm((f) => ({ ...f, image }))}
+              onSaved={(image) => {
+                if (modal.row) {
+                  onImageSaved?.(modal.row.id, image);
+                  setForm((f) => ({ ...f, image }));
+                }
+              }}
             />
           ) : (
             <p className="text-xs text-[#6B7280] mb-4">
@@ -416,7 +498,7 @@ export default function Products({
             </summary>
             <Field label="商品描述">
               <textarea
-                readOnly={modal.mode === 'edit'}
+                readOnly={(!!mediaAccess && !canEdit) || saving}
                 className={inputCls}
                 rows={2}
                 value={form.description}
@@ -425,22 +507,46 @@ export default function Products({
                 }
               />
             </Field>
+            <Field label="上架状态">
+              <select
+                className={inputCls}
+                disabled={!canEdit || saving}
+                value={form.available ? 'ACTIVE' : 'INACTIVE'}
+                onChange={(e) =>
+                  setForm((f) => ({
+                    ...f,
+                    available: e.target.value === 'ACTIVE',
+                  }))
+                }
+              >
+                <option value="ACTIVE">已上架</option>
+                <option value="INACTIVE">已下架</option>
+              </select>
+            </Field>
           </details>
           <p className="text-xs text-[#6B7280]">
-            系统自动字段将在保存功能接入后生成
+            系统自动：商品编号；新增商品会建立默认规格。
           </p>
+          {saveError && (
+            <p role="alert" className="text-red-700">
+              {saveError}
+            </p>
+          )}
+          {imageBusy && <p role="status">图片尚未处理完成，请稍候再保存商品</p>}
           <div className="flex justify-end space-x-2 mt-6 pt-4 border-t border-[#E5E5E5]">
             <button
               onClick={() => setModal(null)}
+              disabled={saving}
               className="px-4 py-2 text-sm text-[#6B7280] hover:text-[#1A1A1A]"
             >
-              关闭预览
+              取消
             </button>
             <button
-              disabled
-              className="px-4 py-2 bg-primary text-white text-sm rounded opacity-50"
+              disabled={!canEdit || saving || imageBusy || !categories.length}
+              onClick={() => void persist()}
+              className="px-4 py-2 bg-primary text-white text-sm rounded disabled:opacity-50"
             >
-              保存（后续接入）
+              {onSave ? (saving ? '保存中…' : '保存商品') : '保存（后续接入）'}
             </button>
           </div>
         </Modal>
