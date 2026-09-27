@@ -29,6 +29,7 @@ import {
   storeInput,
   categoryInput,
   productInput,
+  money,
   variantInput,
   variantEdit,
   groupInput,
@@ -104,6 +105,34 @@ export class CatalogController {
       where: { ...r.scope, id: parse(id, match[1]) },
     });
     if (!asset) throw new NotFoundException('图片不存在或不属于当前门店');
+  }
+  @Post('products/simple') @CatalogAccess() async simpleProduct(
+    @Req() r: AdminRequest,
+    @Body() body: unknown,
+  ) {
+    const { salePriceFen, ...data } = parse(
+      productInput.extend({ salePriceFen: money }),
+      body,
+    );
+    await this.checkImage(r, data.imageUrl);
+    return this.db.$transaction(async (tx) => {
+      await tx.category.findFirstOrThrow({
+        where: { ...r.scope, id: data.categoryId, deletedAt: null },
+      });
+      const product = await tx.product.create({
+        data: { ...r.scope, ...data },
+      });
+      const variant = await tx.variant.create({
+        data: {
+          ...r.scope,
+          productId: product.id,
+          name: '默认规格',
+          salePriceFen,
+          unlimitedStock: true,
+        },
+      });
+      return { ...product, variantRecords: [variant] };
+    });
   }
   @Get('categories') categories(@Req() r: AdminRequest) {
     return this.db.category.findMany({

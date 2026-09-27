@@ -8,6 +8,9 @@ import { join, resolve, sep } from 'node:path';
 import sharp from 'sharp';
 import { PrismaClient } from '@prisma/client';
 import { createApp } from './app.js';
+import { CatalogController } from './catalog.controller.js';
+import type { DatabaseService } from './infrastructure.js';
+import type { AdminRequest } from './auth.js';
 import { parseConfig } from './config.js';
 test('图片上传、读取和商品绑定遵守生产权限及完整租户边界', async () => {
   const config = parseConfig(process.env);
@@ -217,6 +220,139 @@ test('图片上传、读取和商品绑定遵守生产权限及完整租户边�
       '',
     );
     assert.equal(await db.mediaAsset.count({ where: scopes[0] }), 3);
+    async function write(
+      path: string,
+      body: unknown,
+      method = 'POST',
+      identity = 4,
+      store = scopes[0]!.storeId,
+    ) {
+      return fetch(base + '/api/v1/admin' + path, {
+        method,
+        headers: {
+          ...headers(identity, store),
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+      });
+    }
+    const category = await db.category.findFirstOrThrow({ where: scopes[0] });
+    const input = {
+      name: '新商品',
+      categoryId: category.id,
+      description: '真实描述',
+      status: 'INACTIVE',
+      salePriceFen: 1880,
+      imageUrl,
+    };
+    const created = await write('/products/simple', input);
+    assert.equal(created.status, 201);
+    const product = await created.json();
+    const variants = await db.variant.findMany({
+      where: { productId: product.id },
+    });
+    assert.equal(variants.length, 1);
+    assert.equal(variants[0]!.name, '默认规格');
+    assert.equal(variants[0]!.salePriceFen, 1880);
+    assert.equal(product.imageUrl, imageUrl);
+    assert.equal(product.status, 'INACTIVE');
+    const otherCategory = await db.category.findFirstOrThrow({
+      where: scopes[1],
+    });
+    assert.equal(
+      (
+        await write('/products/simple', {
+          ...input,
+          categoryId: otherCategory.id,
+        })
+      ).status,
+      404,
+    );
+    assert.equal(
+      (
+        await write(
+          '/products/simple',
+          { ...input, categoryId: otherCategory.id },
+          'POST',
+          1,
+          scopes[1]!.storeId,
+        )
+      ).status,
+      404,
+    );
+    for (const amount of [-1, 1.1, 2147483648, '1880', null])
+      assert.equal(
+        (await write('/products/simple', { ...input, salePriceFen: amount }))
+          .status,
+        400,
+      );
+    assert.equal(
+      (await write('/products/simple', input, 'POST', 5)).status,
+      403,
+    );
+    assert.equal(
+      (await write('/products/' + product.id, { name: '不允许' }, 'PATCH', 5))
+        .status,
+      403,
+    );
+    const newCategory = await db.category.create({
+      data: { ...scopes[0]!, name: '新分类' },
+    });
+    const change = {
+      name: '编辑后的商品',
+      categoryId: newCategory.id,
+      description: '编辑描述',
+      status: 'ACTIVE',
+    };
+    assert.equal(
+      (await write('/products/' + product.id, change, 'PATCH')).status,
+      200,
+    );
+    const changed = await db.product.findUniqueOrThrow({
+      where: { id: product.id },
+    });
+    for (const key of ['name', 'categoryId', 'description', 'status'] as const)
+      assert.equal(changed[key], change[key]);
+    assert.equal(
+      (
+        await write(
+          '/variants/' + variants[0]!.id,
+          { salePriceFen: 1999 },
+          'PATCH',
+        )
+      ).status,
+      200,
+    );
+    assert.equal(
+      (await db.variant.findUniqueOrThrow({ where: { id: variants[0]!.id } }))
+        .salePriceFen,
+      1999,
+    );
+    // Fail inside a real PostgreSQL transaction after inserting the product.
+    const failingDb = db.$extends({
+      query: {
+        variant: {
+          async create() {
+            throw new Error('test variant failure');
+          },
+        },
+      },
+    });
+    const controller = new CatalogController(
+      failingDb as unknown as DatabaseService,
+    );
+    await assert.rejects(
+      controller.simpleProduct({ scope: scopes[0] } as AdminRequest, {
+        ...input,
+        name: '事务回滚商品',
+      }),
+      /test variant failure/,
+    );
+    assert.equal(
+      await db.product.count({ where: { ...scopes[0], name: '事务回滚商品' } }),
+      0,
+    );
+
     await assert.rejects(
       db.mediaAsset.create({
         data: {
