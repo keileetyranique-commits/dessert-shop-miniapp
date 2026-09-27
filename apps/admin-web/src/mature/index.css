@@ -1,0 +1,43 @@
+@import 'tailwindcss' source(none);
+@source "./";
+
+@theme {
+  --color-primary: #8f6be9;
+  --color-primary-hover: #7a56d4;
+  --color-primary-light: #f3effe;
+  --font-family-sans: 'Inter', system-ui, sans-serif;
+}
+
+body {
+  font-family: 'Inter', system-ui, sans-serif;
+  background-color: #f5f5f5;
+  color: #1a1a1a;
+}
+
+/* Keep the upstream palette/spacing; isolate from the legacy HTML entry. */
+html,
+body,
+#root {
+  min-height: 100%;
+}
+button,
+a,
+input,
+select,
+textarea {
+  -webkit-tap-highlight-color: transparent;
+}
+button:not(:disabled),
+summary {
+  cursor: pointer;
+}
+button:disabled {
+  cursor: not-allowed;
+}
+:focus-visible {
+  outline: 2px solid #8f6be9;
+  outline-offset: 3px;
+}
+dialog::backdrop {
+  background: rgb(0 0 0 / 30%);
+}

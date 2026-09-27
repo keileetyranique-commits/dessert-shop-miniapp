@@ -78,7 +78,7 @@ function fixture(role: string) {
                   : path.includes('/fixed/') || path.includes('/allocation/')
                     ? null
                     : [];
-      return { ok: true, json: async () => value };
+      return new Response(JSON.stringify(value));
     }),
   );
   render(<Workspace token="test" storeId="store" role={role} />);

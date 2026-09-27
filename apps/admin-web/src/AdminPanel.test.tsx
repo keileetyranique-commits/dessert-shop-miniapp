@@ -33,7 +33,7 @@ test('login keeps credentials in memory and sends verified store selection on bu
                 businessHours: '营业时间',
               }
             : [];
-      return { ok: true, json: async () => value };
+      return new Response(JSON.stringify(value));
     }),
   );
   render(<AdminPanel />);
@@ -71,7 +71,7 @@ test('failed login does not expose business UI', async () => {
     'fetch',
     vi.fn().mockResolvedValue({
       ok: false,
-      json: async () => ({ message: '后台访问凭据无效' }),
+      status: 401,
     }),
   );
   render(<AdminPanel />);
@@ -81,7 +81,7 @@ test('failed login does not expose business UI', async () => {
   fireEvent.click(screen.getByRole('button', { name: '保存登录' }));
   expect(await screen.findByRole('alert')).toHaveProperty(
     'textContent',
-    '后台访问凭据无效',
+    '后台访问凭据无效或已失效，请重新登录',
   );
   expect(screen.queryByLabelText('当前授权门店')).toBeNull();
 });
