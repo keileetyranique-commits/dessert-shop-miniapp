@@ -1,0 +1,22 @@
+spring:
+  datasource:
+    druid:
+      url: jdbc:mysql://mysql:3306/litemall_baseline?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false
+      username: litemall
+      password: ${MYSQL_PASSWORD}
+      initial-size: 2
+      min-idle: 2
+      max-active: 10
+litemall:
+  storage:
+    active: local
+    local:
+      storagePath: /app/storage
+      address: http://localhost:${BASELINE_PORT}/wx/storage/fetch/
+  notify:
+    mail:
+      enable: false
+    sms:
+      enable: false
+  express:
+    enable: false

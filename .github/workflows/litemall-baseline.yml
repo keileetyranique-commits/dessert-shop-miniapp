@@ -1,0 +1,30 @@
+name: litemall-baseline
+on:
+  push:
+    branches: [phase-1-1-litemall-baseline]
+  pull_request:
+    paths:
+      [
+        'vendor/litemall/**',
+        'deploy/litemall/**',
+        '.github/workflows/litemall-baseline.yml',
+      ]
+permissions:
+  contents: read
+jobs:
+  upstream-baseline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node deploy/litemall/verify.mjs
+      - run: node deploy/litemall/setup.mjs
+      - run: docker compose --env-file deploy/litemall/.env -f deploy/litemall/compose.yml up -d --build
+      - run: node deploy/litemall/smoke.mjs
+      - if: failure()
+        run: docker compose --env-file deploy/litemall/.env -f deploy/litemall/compose.yml logs --tail=80
+      - if: always()
+        run: docker compose --env-file deploy/litemall/.env -f deploy/litemall/compose.yml down -v
