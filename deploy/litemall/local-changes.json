@@ -1,0 +1,10 @@
+{
+  "litemall-core/src/main/resources/application-core.yml": {
+    "reason": "上游示例凭据改为环境变量；不改变业务逻辑",
+    "sha256": "19fc4548ec2da1634b85b99949bf8cb4353f1e18e26ad08a2700d64118150f00"
+  },
+  "litemall-db/src/main/resources/application-db.yml": {
+    "reason": "上游示例凭据改为环境变量；不改变业务逻辑",
+    "sha256": "37fcd2c908f4e524ef3963ef9a9fd80cc1461f15b4cbcb280e10963461798aef"
+  }
+}
