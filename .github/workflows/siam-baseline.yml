@@ -1,0 +1,30 @@
+name: siam-baseline
+on:
+  push:
+    branches: [codex/siam-shop-baseline]
+  pull_request:
+    paths:
+      [
+        'vendor/siam-server/**',
+        'deploy/siam/**',
+        '.github/workflows/siam-baseline.yml',
+      ]
+permissions:
+  contents: read
+jobs:
+  siam-baseline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node deploy/siam/verify.mjs
+      - run: node --test deploy/siam/fixtures.test.mjs
+      - run: docker compose -f deploy/siam/compose.yml up -d --build
+      - run: node deploy/siam/smoke.mjs
+      - if: failure()
+        run: docker compose -f deploy/siam/compose.yml logs --tail=80
+      - if: always()
+        run: docker compose -f deploy/siam/compose.yml down
