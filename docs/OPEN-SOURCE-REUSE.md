@@ -68,3 +68,9 @@ Modal 保留原布局与样式，用原生 dialog 增加焦点约束和 Escape �
 项目：linlinjava/litemall，GitHub：https://github.com/linlinjava/litemall，固定提交 a1ef964a718b7277925b19ea26afe78ea3a1d325，MIT。许可证复制在 vendor/litemall/LICENSE。实际整体复制八个模块（admin、admin-api、core、db、wx、wx-api、all、all-war）以及根构建/说明/许可证文件，共 1,210 个文件。原页面、路由、表格、表单、商品/分类/订单业务实现未重写；仅两份凭据配置做环境变量化，其余逐文件哈希保持原样。
 
 选择原因：Issue #19 明确选定整体成熟中文商城作为基座，不再按按钮补 React 页面。保留原上游依赖，新增 Docker 工具链、依赖锁、独立环境初始化和真实 CRUD 验收，不向现有 pnpm 应用引入 Vue 或 Java 依赖。所有差异、来源清单、启动方式和重叠能力取舍见 BASELINE-MIGRATION-LITEMALL.md。TastyIgniter 本轮没有引入，也没有复制其代码。
+
+## Issue #21：siam 原版餐饮商家端独立 baseline
+
+实际整体复制 [siam1026/siam-server](https://github.com/siam1026/siam-server) 固定 SHA `0e418d6e8e1a607ae76fb2df054f2b6c8525eacd` 的完整 `vue-siam-shop` 与根 README、Apache-2.0 LICENSE，共 90 文件，存放于 `vendor/siam-server`。保留 package.json 原有 MIT 声明及所有第三方版权信息。页面、布局、路由、表单、表格和交互实际来自上游，未改写为 React。
+
+选择原因：用户指定先体验原版餐饮商家后台。上游文件全部保持原样，Docker 构建副本仅适配地址、Sass/qs 依赖、大小写和外部集成隔离；使用独立测试 fixture 展示虚构数据，未部署完整 Java 业务。自研仅为无生产连接的演示数据适配和来源/隔离检查，避免为了视觉验收重建后端。新增依赖只在独立 Docker 内，不修改主工程依赖。具体文件、版本、功能边界和验收路线见 `BASELINE-MIGRATION-SIAM.md`。litemall 仅保留参考，本轮未修改其 UI。

@@ -1,0 +1,10 @@
+**
+!vendor/
+!vendor/siam-server/
+!vendor/siam-server/vue-siam-shop/
+!vendor/siam-server/vue-siam-shop/**
+!deploy/
+!deploy/siam/
+!deploy/siam/**
+**/node_modules
+**/.env
