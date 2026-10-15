@@ -35,6 +35,10 @@ Phase 0 已通过 PR #11 合并到 main；checks、compose、PostgreSQL、Redis�
 
 Phase 1 已通过 PR #15 合并到 main，Issue #2 已完成。后续商家界面必须同时遵守 [商家易读化与老板模式规则](MERCHANT-UX-RULES.md)。
 
+## Phase 1.1：C 方案商家工作台
+
+Issue #23 锁定现代餐饮 SaaS 风。先交付工作台与完整商品模块，详见 [实现说明](C-MERCHANT-CONSOLE.md)。订单和其他经营模块明确显示接入边界；完成 Draft PR 后停止等待人工审查，不自动进入 Phase 2。
+
 ## Phase 2：Pricing Engine
 
 - 优惠

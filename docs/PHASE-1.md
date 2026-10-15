@@ -181,3 +181,14 @@ Phase 1 集成测试通过生产模式 API 验证鉴权，包含跨商户、同�
   EXPLAIN 测试关闭顺序扫描，仅验证索引能提供无额外 Sort 的路径，不将小样本的优化器选择当成性能基准。
 
 Modifier 成本可通过 PATCH `{ "costFen": null }` 恢复为“未配置”。后台使用明确的“清除成本 / 标记为未配置”按钮；空输入不会自动保存成 0，零成本必须显式录入 0。此修复复用现有 nullable 字段和 CHECK，不新增 migration。
+
+## Phase 1.1 C 方案接入
+
+当前默认后台的人民币元输入、图片、分类归档与工作台说明见 [C 方案商家工作台](C-MERCHANT-CONSOLE.md)。上文操作流程保留 Phase 1 历史背景；当前默认商品界面不再要求输入分。
+
+| 新增接口（前缀 /api/v1） | 方法   | 用途                                                                                            |
+| ------------------------ | ------ | ----------------------------------------------------------------------------------------------- |
+| /admin/products/simple   | POST   | 事务创建商品与默认规格；必填 name、categoryId、salePriceFen，选填 description、imageUrl、status |
+| /admin/categories/:id    | DELETE | 归档空分类；仍有关联商品返回 409                                                                |
+| /admin/media             | POST   | 当前门店图片安全上传，multipart file                                                            |
+| /admin/media/:id         | GET    | 鉴权读取本店 WebP 图片                                                                          |
