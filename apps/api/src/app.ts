@@ -1,4 +1,6 @@
 import 'reflect-metadata';
+import { MediaController } from './media.controller.js';
+import { STORAGE, LocalStorage } from './storage.js';
 import { AdminGuard } from './auth.js';
 import { CatalogController } from './catalog.controller.js';
 import { CostController } from './cost.controller.js';
@@ -46,12 +48,22 @@ export class AppModule {
   static register(config: AppConfig): DynamicModule {
     return {
       module: AppModule,
-      controllers: [AppController, CatalogController, CostController],
+      controllers: [
+        AppController,
+        CatalogController,
+        CostController,
+        MediaController,
+      ],
       providers: [
         { provide: CONFIG, useValue: config },
         DatabaseService,
         RedisService,
         AdminGuard,
+        {
+          provide: STORAGE,
+          useFactory: () =>
+            new LocalStorage(process.env.UPLOAD_DIR ?? './data/uploads'),
+        },
       ],
     };
   }
