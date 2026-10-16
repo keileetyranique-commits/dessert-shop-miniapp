@@ -55,6 +55,7 @@ export const productInput = z
     imageUrl: z
       .union([
         z.literal(''),
+        z.string().regex(/^\/api\/v1\/admin\/media\/[0-9a-f-]{36}$/),
         z
           .string()
           .url()

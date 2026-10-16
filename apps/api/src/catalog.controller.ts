@@ -29,6 +29,7 @@ import {
   storeInput,
   categoryInput,
   productInput,
+  money,
   variantInput,
   variantEdit,
   groupInput,
@@ -96,6 +97,46 @@ export class CatalogController {
       data: parse(storeInput.partial().strict(), body),
     });
   }
+  private async checkImage(r: AdminRequest, imageUrl?: string) {
+    if (!imageUrl) return;
+    const match = /^\/api\/v1\/admin\/media\/([0-9a-f-]{36})$/.exec(imageUrl);
+    if (!match) throw new ForbiddenException('请使用本店上传的商品图片');
+    const asset = await this.db.mediaAsset.findFirst({
+      where: { ...r.scope, id: parse(id, match[1]) },
+    });
+    if (!asset) throw new NotFoundException('图片不存在或不属于当前门店');
+  }
+  @Post('products/simple') @CatalogAccess() async simpleProduct(
+    @Req() r: AdminRequest,
+    @Body() body: unknown,
+  ) {
+    const { salePriceFen, ...data } = parse(
+      productInput.extend({ salePriceFen: money }),
+      body,
+    );
+    await this.checkImage(r, data.imageUrl);
+    return this.db.$transaction(
+      async (tx) => {
+        await tx.category.findFirstOrThrow({
+          where: { ...r.scope, id: data.categoryId, deletedAt: null },
+        });
+        const product = await tx.product.create({
+          data: { ...r.scope, ...data },
+        });
+        const variant = await tx.variant.create({
+          data: {
+            ...r.scope,
+            productId: product.id,
+            name: '默认规格',
+            salePriceFen,
+            unlimitedStock: true,
+          },
+        });
+        return { ...product, variantRecords: [variant] };
+      },
+      { isolationLevel: 'Serializable' },
+    );
+  }
   @Get('categories') categories(@Req() r: AdminRequest) {
     return this.db.category.findMany({
       where: { ...r.scope, deletedAt: null },
@@ -147,6 +188,30 @@ export class CatalogController {
       orderBy: { createdAt: 'asc' },
     });
   }
+  @Delete('categories/:id') @CatalogAccess() async archiveCategory(
+    @Req() r: AdminRequest,
+    @Param('id') value: string,
+  ) {
+    const categoryId = parse(id, value);
+    return this.db.$transaction(
+      async (tx) => {
+        await tx.category.findFirstOrThrow({
+          where: { ...r.scope, id: categoryId, deletedAt: null },
+        });
+        if (
+          await tx.product.count({
+            where: { ...r.scope, categoryId, deletedAt: null },
+          })
+        )
+          throw new ConflictException('分类下仍有商品，请先移动或归档商品');
+        return tx.category.update({
+          where: { id: categoryId, ...r.scope, deletedAt: null },
+          data: { deletedAt: new Date(), status: 'INACTIVE' },
+        });
+      },
+      { isolationLevel: 'Serializable' },
+    );
+  }
   @Get('products/:id') async product(
     @Req() r: AdminRequest,
     @Param('id') value: string,
@@ -163,10 +228,16 @@ export class CatalogController {
     @Body() body: unknown,
   ) {
     const data = parse(productInput, body);
-    await this.db.category.findFirstOrThrow({
-      where: { ...r.scope, id: data.categoryId, deletedAt: null },
-    });
-    return this.db.product.create({ data: { ...r.scope, ...data } });
+    await this.checkImage(r, data.imageUrl);
+    return this.db.$transaction(
+      async (tx) => {
+        await tx.category.findFirstOrThrow({
+          where: { ...r.scope, id: data.categoryId, deletedAt: null },
+        });
+        return tx.product.create({ data: { ...r.scope, ...data } });
+      },
+      { isolationLevel: 'Serializable' },
+    );
   }
   @Patch('products/:id') @CatalogAccess() async editProduct(
     @Req() r: AdminRequest,
@@ -174,18 +245,32 @@ export class CatalogController {
     @Body() body: unknown,
   ) {
     const data = parse(productInput.partial().strict(), body);
-    if (data.categoryId)
-      await this.db.category.findFirstOrThrow({
-        where: { ...r.scope, id: data.categoryId, deletedAt: null },
-      });
-    return this.db.product.update({
-      where: {
-        storeId_id: { storeId: r.scope.storeId, id: parse(id, value) },
-        ...r.scope,
-        deletedAt: null,
-      },
-      data,
+    const current = await this.db.product.findFirstOrThrow({
+      where: { ...r.scope, id: parse(id, value), deletedAt: null },
     });
+    // Legacy public URLs may remain unchanged; protected references always require ownership.
+    if (
+      data.imageUrl?.startsWith('/api/v1/admin/media/') ||
+      data.imageUrl !== current.imageUrl
+    )
+      await this.checkImage(r, data.imageUrl);
+    return this.db.$transaction(
+      async (tx) => {
+        if (data.categoryId)
+          await tx.category.findFirstOrThrow({
+            where: { ...r.scope, id: data.categoryId, deletedAt: null },
+          });
+        return tx.product.update({
+          where: {
+            storeId_id: { storeId: r.scope.storeId, id: parse(id, value) },
+            ...r.scope,
+            deletedAt: null,
+          },
+          data,
+        });
+      },
+      { isolationLevel: 'Serializable' },
+    );
   }
   @Delete('products/:id') @CatalogAccess() removeProduct(
     @Req() r: AdminRequest,
@@ -321,6 +406,7 @@ export class CatalogController {
       where: {
         storeId_id: { storeId: r.scope.storeId, id: parse(id, value) },
         ...r.scope,
+        group: { product: { deletedAt: null } },
       },
       data: parse(modifierInput.partial().strict(), body),
       select: { id: true, name: true, salePriceFen: true, status: true },
