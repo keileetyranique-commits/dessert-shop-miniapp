@@ -39,6 +39,8 @@ import {
 import { StoreGate } from './Data';
 import { Dashboard } from './Dashboard';
 import { Products } from './Products';
+import { Pricing } from './Pricing';
+import { CostSetup } from './CostSetup';
 import './console.css';
 const navigation = [
   ['', '工作台', AppstoreOutlined],
@@ -109,7 +111,9 @@ function Shell() {
           <div className="breadcrumb">
             商家中心 <span>/</span>{' '}
             {navigation.find(
-              ([p]) => location.pathname === '/admin' + (p ? '/' + p : ''),
+              ([p]) =>
+                location.pathname === '/admin' + (p ? '/' + p : '') ||
+                (p !== '' && location.pathname.startsWith('/admin/' + p + '/')),
             )?.[1] ?? '工作台'}
           </div>
           <div className="actions">
@@ -130,8 +134,12 @@ function Shell() {
               <Route path="/admin" element={<Dashboard />} />
               <Route path="/admin/products" element={<Products />} />
               <Route path="/admin/orders" element={<Orders />} />
+              <Route path="/admin/analysis" element={<Pricing />} />
+              <Route path="/admin/analysis/costs" element={<CostSetup />} />
               {navigation
-                .filter(([p]) => !['', 'products', 'orders'].includes(p))
+                .filter(
+                  ([p]) => !['', 'products', 'orders', 'analysis'].includes(p),
+                )
                 .map(([p, label]) => (
                   <Route
                     key={p}

@@ -228,6 +228,35 @@ test('定价使用真实成本、权限、跨租户隔离与不可变依据', as
     assert.equal(result.current.merchantRevenueFen, 5940);
     assert.equal(result.evidence.lines[0].cost.recipeId.length, 36);
     assert.equal(await db.costSnapshot.count({ where: scope }), 0);
+    const secondVariant = await db.variant.create({
+      data: {
+        ...scope,
+        productId: product.id,
+        name: '大份',
+        salePriceFen: 2200,
+        unlimitedStock: true,
+      },
+    });
+    await db.recipe.create({
+      data: {
+        ...scope,
+        variantId: secondVariant.id,
+        version: 1,
+        otherVariableCostFen: 100,
+      },
+    });
+    await db.packagingConfiguration.create({
+      data: { ...scope, variantId: secondVariant.id, fulfillment: 'PICKUP' },
+    });
+    const combination = await (
+      await call('/pricing/simulate', 'POST', {
+        ...input,
+        items: [...input.items, { variantId: secondVariant.id, quantity: 2 }],
+      })
+    ).json();
+    assert.equal(combination.current.variableCostFen, 1490);
+    assert.equal(combination.current.allocatedFixedCostFen, 100);
+    assert.equal(combination.current.goodsFen, 10340);
     await db.recipe.updateMany({
       where: scope,
       data: { otherVariableCostFen: 900 },

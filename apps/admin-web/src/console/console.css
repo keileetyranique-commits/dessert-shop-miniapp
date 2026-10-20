@@ -688,3 +688,32 @@ a:focus-visible {
     font-size: 27px;
   }
 }
+.pricing-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+  margin: 24px 0;
+}
+.pricing-grid .panel {
+  min-width: 0;
+}
+.pricing-item {
+  border: 1px solid #e8edf0;
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+.pricing-prices {
+  background: #edf8f7;
+  border-radius: 12px;
+  padding: 12px 20px;
+  margin-top: 20px;
+}
+.pricing-result {
+  align-self: start;
+}
+@media (max-width: 900px) {
+  .pricing-grid {
+    grid-template-columns: 1fr;
+  }
+}
