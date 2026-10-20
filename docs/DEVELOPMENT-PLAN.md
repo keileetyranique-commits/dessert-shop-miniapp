@@ -41,6 +41,8 @@ Issue #23 锁定现代餐饮 SaaS 风。先交付工作台与完整商品模块�
 
 ## Phase 2：Pricing Engine
 
+实现与确定性计算口径见 [PHASE-2.md](PHASE-2.md)。承接已合并 C 版后台，完成后以 Draft PR 等待人工审查，不进入 Phase 3。
+
 - 优惠
 - 配送成本输入
 - 支付手续费

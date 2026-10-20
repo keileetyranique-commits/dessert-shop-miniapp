@@ -24,3 +24,7 @@
 ## 本项目编写的部分及原因
 
 `console/App.tsx`、Dashboard、Products、Resources、Session、Data、Media 的业务组合及 CSS 遵循用户确认的 C 规范。选择成熟通用组件而非整套后台迁移，是为了保持现有 NestJS/Prisma 租户、安全、整数金额契约，并避免再次引入用户已停止的视觉基座。分类安全归档是现有 API 的小型补充，复用现有软删除字段。确定性金额和权限始终由本项目代码及后端负责。
+
+# Phase 2 追加记录
+
+本期继续使用当前 C 外壳及 Ant Design / Ant Design Icons / React Router（MIT），未引入新 UI 模板或新依赖。定价页与成本补录入口复用其 Form、Select、Collapse、Alert、Table 等既有组件；没有复制新的第三方源码。复用本仓库成本计算、身份与门店验证、安全请求、精确人民币转换。定价和利润保护按 AGENTS.md 的差异化能力要求自研，原因是优惠归属、精确费用舍入、缺失成本阻断、租户规则必须与现有成本中心一致；不使用 AI 计算金额。
