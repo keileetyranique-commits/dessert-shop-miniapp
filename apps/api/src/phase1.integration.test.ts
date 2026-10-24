@@ -882,6 +882,7 @@ test('Phase 1 real admin, tenant constraints and complete product cost flow', as
         await request('/costs/variants/' + variant.id + '/packaging', 'PUT', {
           fulfillment: 'PICKUP',
           items: [],
+          noPackagingConfirmed: true,
         });
         await request('/costs/allocation/2026-09', 'PUT', {
           method: 'ORDER',
@@ -959,7 +960,7 @@ test('Phase 1 real admin, tenant constraints and complete product cost flow', as
         await request(
           '/costs/variants/' + sku.id + '/packaging',
           'PUT',
-          { fulfillment: 'PICKUP', items: [] },
+          { fulfillment: 'PICKUP', items: [], noPackagingConfirmed: true },
           404,
         );
         await request(

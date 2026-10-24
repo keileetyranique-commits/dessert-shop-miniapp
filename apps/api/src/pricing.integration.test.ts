@@ -181,16 +181,107 @@ test('定价使用真实成本、权限、跨租户隔离与不可变依据', as
     assert.ok(
       partial.missingInputs.some((x: string) => x.includes('附加选项')),
     );
-    await db.recipe.create({
-      data: {
-        ...scope,
-        variantId: variant.id,
-        version: 1,
-        otherVariableCostFen: 420,
-      },
+    // Empty lists must not silently become complete zero-cost data.
+    for (const confirmation of [undefined, false, 'true']) {
+      assert.equal(
+        (
+          await call(`/costs/variants/${variant.id}/recipe`, 'PUT', {
+            items: [],
+            noIngredientsConfirmed: confirmation,
+          })
+        ).status,
+        400,
+      );
+      assert.equal(
+        (
+          await call(`/costs/variants/${variant.id}/packaging`, 'PUT', {
+            fulfillment: 'PICKUP',
+            items: [],
+            noPackagingConfirmed: confirmation,
+          })
+        ).status,
+        400,
+      );
+    }
+    assert.equal(await db.recipe.count({ where: scope }), 0);
+    assert.equal(await db.packagingConfiguration.count({ where: scope }), 0);
+    const unconfirmed = await (
+      await call('/pricing/simulate', 'POST', input)
+    ).json();
+    assert.equal(unconfirmed.complete, false);
+    assert.equal(unconfirmed.decision, 'MANUAL_REVIEW');
+    assert.ok(unconfirmed.missingInputs.some((x: string) => x.includes('BOM')));
+    assert.ok(
+      unconfirmed.missingInputs.some((x: string) => x.includes('PACKAGING')),
+    );
+    assert.equal(
+      (
+        await call(`/costs/variants/${variant.id}/recipe`, 'PUT', {
+          items: [],
+          noIngredientsConfirmed: true,
+        })
+      ).status,
+      200,
+    );
+    assert.equal(
+      (
+        await call(`/costs/variants/${variant.id}/packaging`, 'PUT', {
+          fulfillment: 'PICKUP',
+          items: [],
+          noPackagingConfirmed: true,
+        })
+      ).status,
+      200,
+    );
+    const confirmedRecipe = await db.recipe.findFirstOrThrow({ where: scope });
+    const skuPack = await db.packagingItem.create({
+      data: { ...scope, name: '测试杯', scope: 'SKU', unitCostFen: 25 },
     });
-    await db.packagingConfiguration.create({
-      data: { ...scope, variantId: variant.id, fulfillment: 'PICKUP' },
+    assert.equal(
+      (
+        await call(`/costs/variants/${variant.id}/packaging`, 'PUT', {
+          fulfillment: 'PICKUP',
+          items: [{ packagingItemId: skuPack.id, quantity: 1 }],
+        })
+      ).status,
+      200,
+    );
+    assert.equal(
+      (
+        await call(`/costs/variants/${variant.id}/packaging`, 'PUT', {
+          fulfillment: 'PICKUP',
+          items: [],
+        })
+      ).status,
+      400,
+    );
+    assert.equal(await db.skuPackaging.count({ where: scope }), 1);
+    assert.equal(
+      (
+        await call(`/costs/variants/${variant.id}/packaging`, 'PUT', {
+          fulfillment: 'PICKUP',
+          items: [],
+          noPackagingConfirmed: true,
+        })
+      ).status,
+      200,
+    );
+    assert.equal(await db.skuPackaging.count({ where: scope }), 0);
+    assert.equal(
+      (await call(`/costs/variants/${variant.id}/recipe`, 'PUT', { items: [] }))
+        .status,
+      400,
+    );
+    assert.equal(await db.recipe.count({ where: scope }), 1);
+    assert.equal(
+      (await db.recipe.findUniqueOrThrow({ where: { id: confirmedRecipe.id } }))
+        .active,
+      true,
+    );
+    // Continue with this confirmed recipe, not a second simultaneous active version.
+    await db.recipe.update({
+      where: { id: confirmedRecipe.id },
+      data: { otherVariableCostFen: 420 },
     });
     await db.monthlyFixedCost.create({
       data: {
@@ -226,6 +317,18 @@ test('定价使用真实成本、权限、跨租户隔离与不可变依据', as
     assert.equal(result.current.allocatedFixedCostFen, 100);
     assert.equal(result.current.variableCostFen, 1290);
     assert.equal(result.current.merchantRevenueFen, 5940);
+    assert.equal(result.complete, true);
+    assert.equal(result.evidence.lines[0].cost.response.ingredientCostFen, 0);
+    assert.equal(result.evidence.lines[0].cost.response.packagingCostFen, 0);
+    await db.modifierGroup.update({
+      where: { id: group.id },
+      data: { status: 'INACTIVE' },
+    });
+    assert.equal((await call('/pricing/simulate', 'POST', input)).status, 400);
+    await db.modifierGroup.update({
+      where: { id: group.id },
+      data: { status: 'ACTIVE' },
+    });
     assert.equal(result.evidence.lines[0].cost.recipeId.length, 36);
     assert.equal(await db.costSnapshot.count({ where: scope }), 0);
     const secondVariant = await db.variant.create({

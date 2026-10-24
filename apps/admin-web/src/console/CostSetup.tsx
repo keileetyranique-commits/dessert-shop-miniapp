@@ -1,5 +1,14 @@
 import { useEffect, useState, useId } from 'react';
-import { Alert, Button, Form, Input, InputNumber, Select, Tabs } from 'antd';
+import {
+  Alert,
+  Button,
+  Checkbox,
+  Form,
+  Input,
+  InputNumber,
+  Select,
+  Tabs,
+} from 'antd';
 import { Link } from 'react-router-dom';
 import { useCatalog } from './Data';
 import { useSession } from './Session';
@@ -107,8 +116,10 @@ function CostForms() {
   const wrap = (
     children: React.ReactNode,
     save: (v: Values) => Promise<unknown>,
+    emptyConfirmation?: string,
   ) => (
     <CostForm
+      emptyConfirmation={emptyConfirmation}
       save={async (v) => {
         await save(v);
         await load();
@@ -194,7 +205,7 @@ function CostForms() {
                 <>
                   <Alert
                     type="info"
-                    title="保存为新的配方版本并启用。填写完整配方，不会删除旧版本；空原料清单表示明确无需原料。"
+                    title="保存为新的配方版本并启用，不会删除旧版本。请填写完整原料清单；确实无需原料时，必须在下方明确确认。"
                   />
                   {selector('variantId', '商品规格', variants)}
                   {number('yieldQuantity', '此配方产出份数 · 必填', 1)}
@@ -237,7 +248,9 @@ function CostForms() {
                     laborSeconds: v.laborSeconds,
                     otherVariableCostFen: yuanToFen(String(v.other)),
                     items: v.items ?? [],
+                    noIngredientsConfirmed: v.emptyConfirmed === true,
                   }),
+                '我确认此配方确实无需原料',
               ),
             },
             {
@@ -305,14 +318,16 @@ function CostForms() {
                         )}
                       </Form.List>
                       <p>
-                        空清单明确表示此履约方式无需商品包装。保存会替换当前清单。
+                        保存会替换当前清单。请添加所需包装；确实无需包装时，必须在下方明确确认。
                       </p>
                     </>,
                     (v) =>
                       api(`/costs/variants/${v.variantId}/packaging`, 'PUT', {
                         fulfillment: v.fulfillment,
                         items: v.items ?? [],
+                        noPackagingConfirmed: v.emptyConfirmed === true,
                       }),
+                    '我确认此商品在所选履约方式下确实无需包装',
                   )}
                 </div>
               ),
@@ -411,19 +426,28 @@ function CostForms() {
 function CostForm({
   children,
   save,
+  emptyConfirmation,
 }: {
   children: React.ReactNode;
   save: (v: Values) => Promise<unknown>;
+  emptyConfirmation?: string;
 }) {
   const formName = useId();
+  const [form] = Form.useForm();
   const [busy, setBusy] = useState(false),
     [message, setMessage] = useState(''),
     [failed, setFailed] = useState(false);
   return (
     <Form
+      form={form}
       name={formName}
       layout="vertical"
       disabled={busy}
+      onValuesChange={(changed) => {
+        setMessage('');
+        if (emptyConfirmation && !Object.hasOwn(changed, 'emptyConfirmed'))
+          form.setFieldValue('emptyConfirmed', false);
+      }}
       initialValues={{
         month: new Intl.DateTimeFormat('sv-SE', {
           timeZone: 'Asia/Shanghai',
@@ -436,6 +460,7 @@ function CostForm({
         setMessage('');
         try {
           await save(v);
+          form.setFieldValue('emptyConfirmed', false);
           setFailed(false);
           setMessage('已保存成本资料，请返回重新计算利润');
         } catch (e) {
@@ -451,6 +476,30 @@ function CostForm({
       }}
     >
       {children}
+      {emptyConfirmation && (
+        <Form.Item noStyle shouldUpdate>
+          {() =>
+            !(form.getFieldValue('items') ?? []).length && (
+              <Form.Item
+                name="emptyConfirmed"
+                valuePropName="checked"
+                rules={[
+                  {
+                    validator: (_, value) =>
+                      value === true
+                        ? Promise.resolve()
+                        : Promise.reject(
+                            Error('清单为空，请添加项目或明确确认无需使用'),
+                          ),
+                  },
+                ]}
+              >
+                <Checkbox>{emptyConfirmation}</Checkbox>
+              </Form.Item>
+            )
+          }
+        </Form.Item>
+      )}
       {message && <Alert type={failed ? 'error' : 'success'} title={message} />}
       <Button htmlType="submit" type="primary" loading={busy}>
         保存成本资料

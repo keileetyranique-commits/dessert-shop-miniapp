@@ -18,7 +18,44 @@ vi.mock('./Data', () => ({
         id: 'p',
         name: '乌龙茶',
         variantRecords: [{ id: 'v', name: '默认规格', salePriceFen: 1880 }],
-        modifierGroupRecords: [],
+        modifierGroupRecords: [
+          {
+            id: 'g1',
+            name: '可用组',
+            status: 'ACTIVE',
+            minSelections: 0,
+            maxSelections: 1,
+            modifierRecords: [
+              {
+                id: 'm1',
+                name: '可用选项',
+                status: 'ACTIVE',
+                salePriceFen: 100,
+              },
+              {
+                id: 'm2',
+                name: '停用选项',
+                status: 'INACTIVE',
+                salePriceFen: 100,
+              },
+            ],
+          },
+          {
+            id: 'g2',
+            name: '停用组',
+            status: 'INACTIVE',
+            minSelections: 0,
+            maxSelections: 1,
+            modifierRecords: [
+              {
+                id: 'm3',
+                name: '组内仍启用选项',
+                status: 'ACTIVE',
+                salePriceFen: 100,
+              },
+            ],
+          },
+        ],
       },
     ],
   }),
@@ -31,6 +68,20 @@ afterEach(() => {
   vi.restoreAllMocks();
   role = 'OWNER';
   api.mockReset();
+});
+
+test('定价附加选项同时过滤停用组与停用选项', async () => {
+  api.mockImplementation(async (path: string) =>
+    path === '/pricing/rules' ? null : [],
+  );
+  mount();
+  await screen.findByText('如果这样卖');
+  fireEvent.mouseDown(screen.getByLabelText('商品与规格'));
+  fireEvent.click(await screen.findByText('乌龙茶 / 默认规格 · ¥18.80'));
+  fireEvent.mouseDown(await screen.findByLabelText('附加选项 · 每份相同选择'));
+  expect(await screen.findByText('可用组 / 可用选项 +¥1.00')).toBeTruthy();
+  expect(screen.queryByText(/组内仍启用选项/)).toBeNull();
+  expect(screen.queryByText(/可用组 \/ 停用选项/)).toBeNull();
 });
 function mount() {
   vi.stubGlobal(

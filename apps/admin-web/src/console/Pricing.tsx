@@ -302,21 +302,25 @@ function PricingWorkspace() {
                           label="模拟单份售价 · 选填，留空沿用当前售价"
                           name={[f.name, 'price']}
                         />
-                        {!!p?.modifierGroupRecords.length && (
+                        {!!p?.modifierGroupRecords.some(
+                          (g) => g.status === 'ACTIVE',
+                        ) && (
                           <Form.Item
                             name={[f.name, 'modifierIds']}
                             label="附加选项 · 每份相同选择"
                           >
                             <Select
                               mode="multiple"
-                              options={p.modifierGroupRecords.flatMap((g) =>
-                                g.modifierRecords
-                                  .filter((m) => m.status === 'ACTIVE')
-                                  .map((m) => ({
-                                    value: m.id,
-                                    label: `${g.name} / ${m.name} +${money(m.salePriceFen)}`,
-                                  })),
-                              )}
+                              options={p.modifierGroupRecords
+                                .filter((g) => g.status === 'ACTIVE')
+                                .flatMap((g) =>
+                                  g.modifierRecords
+                                    .filter((m) => m.status === 'ACTIVE')
+                                    .map((m) => ({
+                                      value: m.id,
+                                      label: `${g.name} / ${m.name} +${money(m.salePriceFen)}`,
+                                    })),
+                                )}
                             />
                           </Form.Item>
                         )}
