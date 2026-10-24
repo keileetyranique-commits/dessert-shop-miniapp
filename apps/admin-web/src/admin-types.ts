@@ -17,6 +17,7 @@ export interface Variant extends Named {
   status: string;
 }
 export interface Group extends Named {
+  status: string;
   modifierRecords: (Named & { salePriceFen: number; status: string })[];
 }
 export interface Product extends Named {

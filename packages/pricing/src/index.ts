@@ -1,5 +1,12 @@
 import type { Fen, TenantScope } from '@platform/shared';
-// Business calculations are implemented in Phase 2, never as floating-point currency.
+// One deterministic engine shared by merchant simulation and future checkout adapters.
+export { simulatePricing, feeFen, PRICING_VERSION } from '@platform/shared';
+export type {
+  PricingRule,
+  FeeRule,
+  PricingInput as PricingScenarioInput,
+} from '@platform/shared';
+// Phase 0 adapter contract retained for compatibility; do not bypass the full risk input.
 export interface PricingInput {
   scope: TenantScope;
   subtotalFen: Fen;

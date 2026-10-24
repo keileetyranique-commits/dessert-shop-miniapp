@@ -62,6 +62,8 @@ model Store {
   costAllocationRuleRecords     CostAllocationRule[]
   costSnapshotRecords           CostSnapshot[]
   mediaAssets                   MediaAsset[]
+  pricingRules                  PricingRule[]
+  pricingSimulations            PricingSimulation[]
 
   @@unique([merchantId, brandId, id])
   @@index([merchantId, brandId])
@@ -406,4 +408,35 @@ model CostSnapshot {
   @@unique([storeId, id])
   @@index([merchantId, brandId, storeId])
   @@map("cost_snapshots")
+}
+
+model PricingRule {
+  revision   Int      @unique @default(autoincrement())
+  id         String   @id @default(uuid()) @db.Uuid
+  merchantId String   @db.Uuid
+  brandId    String   @db.Uuid
+  storeId    String   @db.Uuid
+  createdAt  DateTime @default(now()) @db.Timestamptz(3)
+  actor      String
+  rules      Json
+  store      Store    @relation(fields: [merchantId, brandId, storeId], references: [merchantId, brandId, id], onDelete: Restrict)
+
+  @@index([merchantId, brandId, storeId, createdAt(sort: Desc), id(sort: Desc)])
+  @@map("pricing_rules")
+}
+
+model PricingSimulation {
+  id                 String   @id @default(uuid()) @db.Uuid
+  merchantId         String   @db.Uuid
+  brandId            String   @db.Uuid
+  storeId            String   @db.Uuid
+  createdAt          DateTime @default(now()) @db.Timestamptz(3)
+  actor              String
+  calculationVersion String
+  inputs             Json
+  result             Json
+  store              Store    @relation(fields: [merchantId, brandId, storeId], references: [merchantId, brandId, id], onDelete: Restrict)
+
+  @@index([merchantId, brandId, storeId, createdAt(sort: Desc)])
+  @@map("pricing_simulations")
 }

@@ -4,6 +4,7 @@ import { STORAGE, LocalStorage } from './storage.js';
 import { AdminGuard } from './auth.js';
 import { CatalogController } from './catalog.controller.js';
 import { CostController } from './cost.controller.js';
+import { PricingController } from './pricing.controller.js';
 import {
   Controller,
   Get,
@@ -52,6 +53,7 @@ export class AppModule {
         AppController,
         CatalogController,
         CostController,
+        PricingController,
         MediaController,
       ],
       providers: [

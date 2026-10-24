@@ -114,6 +114,7 @@ export const purchaseInput = z
   .strict();
 export const recipeInput = z
   .object({
+    noIngredientsConfirmed: z.boolean().default(false),
     yieldQuantity: positive.default(1),
     laborSeconds: count.default(0),
     otherVariableCostFen: money.default(0),
@@ -121,7 +122,11 @@ export const recipeInput = z
       .array(z.object({ ingredientId: id, quantity: decimal, unit }).strict())
       .max(200),
   })
-  .strict();
+  .strict()
+  .refine((v) => v.items.length > 0 || v.noIngredientsConfirmed, {
+    message: '原料清单为空，请明确确认此配方无需原料',
+    path: ['noIngredientsConfirmed'],
+  });
 export const packagingInput = z
   .object({
     name,
@@ -132,12 +137,17 @@ export const packagingInput = z
   .strict();
 export const packagingMapping = z
   .object({
+    noPackagingConfirmed: z.boolean().default(false),
     fulfillment,
     items: z
       .array(z.object({ packagingItemId: id, quantity: positive }).strict())
       .max(100),
   })
-  .strict();
+  .strict()
+  .refine((v) => v.items.length > 0 || v.noPackagingConfirmed, {
+    message: '包装清单为空，请明确确认此履约方式无需商品包装',
+    path: ['noPackagingConfirmed'],
+  });
 export const fixedInput = z
   .object({
     rentFen: money,
