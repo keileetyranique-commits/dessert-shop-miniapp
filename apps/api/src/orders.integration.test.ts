@@ -1,10 +1,15 @@
+import 'reflect-metadata';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, randomBytes } from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
 import { parseConfig } from './config.js';
 import { reserveInventory, settleInventory } from './order-inventory.js';
 import { readCheckout, defaultCheckoutTerms } from './checkout-reader.js';
+import { OrdersService } from './orders.service.js';
+import type { DatabaseService } from './infrastructure.js';
+import type { AdminRequest } from './auth.js';
+import { createApp } from './app.js';
 
 test('订单存储：租户复合外键、幂等键、不可变快照与事务回滚', async () => {
   const config = parseConfig(process.env);
@@ -17,6 +22,7 @@ test('订单存储：租户复合外键、幂等键、不可变快照与事务�
     brandId = randomUUID();
   const scope = { merchantId, brandId, storeId: randomUUID() };
   const other = { ...scope, storeId: randomUUID() };
+  let app: Awaited<ReturnType<typeof createApp>> | undefined;
   try {
     await db.merchant.create({
       data: { id: merchantId, name: '订单隔离测试' },
@@ -324,7 +330,387 @@ test('订单存储：租户复合外键、幂等键、不可变快照与事务�
         .stockQuantity,
       0,
     );
+    // Explicit fixture: no ingredients or packaging; other variable cost is 300 Fen.
+    await db.recipe.create({
+      data: {
+        ...scope,
+        variantId: variant.id,
+        version: 1,
+        otherVariableCostFen: 300,
+      },
+    });
+    await db.packagingConfiguration.create({
+      data: { ...scope, variantId: variant.id, fulfillment: 'PICKUP' },
+    });
+    const month = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Shanghai',
+      year: 'numeric',
+      month: '2-digit',
+    }).format(new Date());
+    await db.monthlyFixedCost.create({
+      data: {
+        ...scope,
+        month,
+        rentFen: 0,
+        utilitiesFen: 0,
+        payrollFen: 0,
+        propertyFeeFen: 0,
+        depreciationFen: 0,
+        softwareFen: 0,
+        otherFen: 0,
+      },
+    });
+    await db.costAllocationRule.create({
+      data: {
+        ...scope,
+        month,
+        method: 'ORDER',
+        expectedMonthlyOrders: 100,
+        expectedMonthlyItems: 100,
+        laborFenPerMinute: 0,
+      },
+    });
+    const noFee = { rateBps: 0, fixedFen: 0, minimumFen: 0, capFen: null };
+    await db.pricingRule.create({
+      data: {
+        ...scope,
+        actor: 'test-owner',
+        rules: {
+          minimumProfitFen: 100,
+          minimumMarginBps: 0,
+          targetProfitFen: 100,
+          targetMarginBps: 0,
+          maximumDistanceMeters: 8000,
+          maximumSubsidyFen: 0,
+          allowTopup: false,
+          payment: noFee,
+          commission: noFee,
+        },
+      },
+    });
+    await db.variant.update({
+      where: { id: variant.id },
+      data: { unlimitedStock: false, stockQuantity: 3 },
+    });
+    const service = new OrdersService(db as DatabaseService, config);
+    const caller: AdminRequest = {
+      scope,
+      headers: {},
+      identity: {
+        ...scope,
+        id: 'test-owner',
+        role: 'OWNER',
+        token: 'unused-test-identity',
+        storeIds: [scope.storeId],
+      },
+    };
+    const readyPreview = await service.preview(caller, checkout);
+    assert.equal(readyPreview.decision, 'PASS');
+    const createInput = {
+      previewId: readyPreview.previewId,
+      idempotencyKey: randomUUID(),
+      acceptTopup: false,
+    };
+    const [created, repeated] = await Promise.all([
+      service.create(caller, createInput),
+      service.create(caller, createInput),
+    ]);
+    assert.equal(created.id, repeated.id);
+    assert.equal(
+      (await db.variant.findUniqueOrThrow({ where: { id: variant.id } }))
+        .reservedQuantity,
+      1,
+    );
+    await assert.rejects(
+      service.create(caller, { ...createInput, acceptTopup: true }),
+    );
+    const paid = await service.action(
+      caller,
+      created.id,
+      'PAY',
+      'payment-success',
+    );
+    assert.equal(paid.orderStatus, 'AWAITING_ACCEPTANCE');
+    assert.deepEqual(
+      await service.action(caller, created.id, 'PAY', 'payment-success'),
+      paid,
+    );
+    assert.equal(
+      (
+        await service.action(
+          caller,
+          created.id,
+          'PAY_FAIL',
+          'late-payment-failure',
+        )
+      ).paymentStatus,
+      'PAID',
+    );
+    await service.action(caller, created.id, 'ACCEPT', 'accept');
+    await service.action(caller, created.id, 'READY', 'ready');
+    await Promise.all([
+      service.action(caller, created.id, 'PICKUP', 'pickup'),
+      service.action(caller, created.id, 'PICKUP', 'pickup'),
+    ]);
+    assert.equal(
+      (await db.variant.findUniqueOrThrow({ where: { id: variant.id } }))
+        .stockQuantity,
+      2,
+    );
+    assert.equal(
+      (await db.variant.findUniqueOrThrow({ where: { id: variant.id } }))
+        .reservedQuantity,
+      0,
+    );
+    assert.equal(
+      await db.orderEvent.count({
+        where: { orderId: created.id, action: 'PICKUP' },
+      }),
+      1,
+    );
+    const stale = await service.preview(caller, checkout);
+    await db.variant.update({
+      where: { id: variant.id },
+      data: { salePriceFen: 1990 },
+    });
+    await assert.rejects(
+      service.create(caller, {
+        previewId: stale.previewId,
+        idempotencyKey: randomUUID(),
+        acceptTopup: false,
+      }),
+    );
+    assert.equal(
+      (await db.variant.findUniqueOrThrow({ where: { id: variant.id } }))
+        .reservedQuantity,
+      0,
+    );
+    const tokens = [0, 1, 2].map(() => randomBytes(32).toString('hex'));
+    const identities = tokens.map((token, i) => ({
+      token,
+      id: 'http-' + i,
+      merchantId,
+      brandId,
+      storeIds: [scope.storeId, other.storeId],
+      role: ['OWNER', 'MANAGER', 'COST_MANAGER'][i],
+    }));
+    for (const [environment, testMode] of [
+      ['production', false],
+      ['test', false],
+      ['test', true],
+    ] as const) {
+      app = await createApp(
+        parseConfig({
+          ...process.env,
+          APP_ENV: environment,
+          NODE_ENV: environment,
+          TEST_MODE: String(testMode),
+          ADMIN_IDENTITIES: JSON.stringify(identities),
+        }),
+      );
+      await app.listen(0, '127.0.0.1');
+      const base = (await app.getUrl()) + '/api/v1/admin';
+      const call = (
+        path: string,
+        method = 'GET',
+        body?: unknown,
+        role = 0,
+        store = scope.storeId,
+      ) =>
+        fetch(base + path, {
+          method,
+          headers: {
+            Authorization: `Bearer ${tokens[role]}`,
+            'X-Store-Id': store,
+            'Content-Type': 'application/json',
+          },
+          ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+        });
+      const routes: [string, string][] = [
+        ['/orders', 'GET'],
+        ['/orders/menu', 'GET'],
+        ['/orders/settings', 'GET'],
+        ['/orders/settings', 'PUT'],
+        ['/orders/preview', 'POST'],
+        ['/orders', 'POST'],
+        [`/orders/${created.id}`, 'GET'],
+        [`/orders/${created.id}/actions`, 'POST'],
+        ['/order-test/quotes', 'POST'],
+        [`/order-test/quotes/${quote.id}/invalidate`, 'POST'],
+        [`/order-test/orders/${created.id}/timeout`, 'POST'],
+      ];
+      for (const [path, method] of routes) {
+        const denied = await call(
+          path,
+          method,
+          method === 'GET' ? undefined : {},
+          testMode ? 2 : 0,
+        );
+        assert.equal(
+          denied.status,
+          403,
+          `${environment}/${testMode} ${method} ${path}`,
+        );
+      }
+      if (testMode) {
+        assert.equal(
+          (
+            await call(
+              '/orders/settings',
+              'PUT',
+              { autoAccept: true, terms: defaultCheckoutTerms },
+              1,
+            )
+          ).status,
+          403,
+        );
+        assert.equal(
+          (
+            await call('/orders/settings', 'PUT', {
+              autoAccept: true,
+              terms: defaultCheckoutTerms,
+            })
+          ).status,
+          200,
+        );
+        assert.equal(
+          (
+            await call(
+              `/orders/${created.id}`,
+              'GET',
+              undefined,
+              0,
+              other.storeId,
+            )
+          ).status,
+          404,
+        );
+        assert.equal(
+          (
+            await call('/orders/preview', 'POST', {
+              ...checkout,
+              salePriceFen: 1,
+            })
+          ).status,
+          400,
+        );
+        const menu = await (
+          await call('/orders/menu', 'GET', undefined, 1)
+        ).json();
+        assert.equal(menu[0].name, '更改后的商品');
+        assert.equal(JSON.stringify(menu).includes('costFen'), false);
+        const httpPreview = await (
+          await call('/orders/preview', 'POST', checkout, 1)
+        ).json();
+        assert.equal(httpPreview.decision, 'PASS');
+        const httpCreatedResponse = await call(
+          '/orders',
+          'POST',
+          {
+            previewId: httpPreview.previewId,
+            idempotencyKey: randomUUID(),
+            acceptTopup: false,
+          },
+          1,
+        );
+        assert.equal(httpCreatedResponse.status, 201);
+        const httpCreated = await httpCreatedResponse.json();
+        const httpPaid = await (
+          await call(
+            `/orders/${httpCreated.id}/actions`,
+            'POST',
+            { action: 'PAY', idempotencyKey: randomUUID() },
+            1,
+          )
+        ).json();
+        assert.equal(httpPaid.orderStatus, 'PREPARING');
+        const serialized = JSON.stringify(httpPaid);
+        assert.equal(serialized.includes('contributionProfitFen'), false);
+        assert.equal(serialized.includes('recipeId'), false);
+        assert.equal(
+          (
+            await call(`/variants/${variant.id}`, 'PATCH', {
+              unlimitedStock: true,
+            })
+          ).status,
+          409,
+        );
+        assert.equal(
+          (
+            await call(`/variants/${variant.id}/stock`, 'POST', {
+              delta: -2,
+              reason: '测试不可挪用预占库存',
+            })
+          ).status,
+          409,
+        );
+        const failurePreview = await (
+          await call('/orders/preview', 'POST', checkout)
+        ).json();
+        const failureOrder = await (
+          await call('/orders', 'POST', {
+            previewId: failurePreview.previewId,
+            idempotencyKey: randomUUID(),
+            acceptTopup: false,
+          })
+        ).json();
+        const failed = await (
+          await call(`/orders/${failureOrder.id}/actions`, 'POST', {
+            action: 'PAY_FAIL',
+            idempotencyKey: randomUUID(),
+          })
+        ).json();
+        assert.equal(failed.orderStatus, 'CANCELLED');
+        assert.equal(failed.paymentStatus, 'FAILED');
+        assert.equal(
+          (await db.variant.findUniqueOrThrow({ where: { id: variant.id } }))
+            .reservedQuantity,
+          1,
+        );
+        const timeoutPreview = await (
+          await call('/orders/preview', 'POST', checkout)
+        ).json();
+        const timeoutOrder = await (
+          await call('/orders', 'POST', {
+            previewId: timeoutPreview.previewId,
+            idempotencyKey: randomUUID(),
+            acceptTopup: false,
+          })
+        ).json();
+        await db.order.update({
+          where: { id: timeoutOrder.id },
+          data: { expiresAt: new Date(0) },
+        });
+        await service.sweepExpired();
+        await service.sweepExpired();
+        assert.equal(
+          (await db.order.findUniqueOrThrow({ where: { id: timeoutOrder.id } }))
+            .orderStatus,
+          'CANCELLED',
+        );
+        assert.equal(
+          (await db.variant.findUniqueOrThrow({ where: { id: variant.id } }))
+            .reservedQuantity,
+          1,
+        );
+        assert.equal(
+          await db.orderEvent.count({
+            where: { orderId: timeoutOrder.id, action: 'EXPIRE' },
+          }),
+          1,
+        );
+      }
+      await app.close();
+      app = undefined;
+    }
   } finally {
+    await app?.close();
+    await db.checkoutPreview.deleteMany({ where: { merchantId } });
+    await db.pricingRule.deleteMany({ where: { merchantId } });
+    await db.recipe.deleteMany({ where: { merchantId } });
+    await db.packagingConfiguration.deleteMany({ where: { merchantId } });
+    await db.monthlyFixedCost.deleteMany({ where: { merchantId } });
+    await db.costAllocationRule.deleteMany({ where: { merchantId } });
     await db.orderSettings.deleteMany({ where: { merchantId } });
     await db.mockDeliveryQuote.deleteMany({ where: { merchantId } });
     await db.inventoryMovement.deleteMany({ where: { merchantId } });

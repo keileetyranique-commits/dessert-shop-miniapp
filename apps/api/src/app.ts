@@ -5,6 +5,9 @@ import { AdminGuard } from './auth.js';
 import { CatalogController } from './catalog.controller.js';
 import { CostController } from './cost.controller.js';
 import { PricingController } from './pricing.controller.js';
+import { OrdersController, OrderTestController } from './orders.controller.js';
+import { OrdersService } from './orders.service.js';
+import { TestModeGuard } from './order-security.js';
 import {
   Controller,
   Get,
@@ -55,12 +58,16 @@ export class AppModule {
         CostController,
         PricingController,
         MediaController,
+        OrdersController,
+        OrderTestController,
       ],
       providers: [
         { provide: CONFIG, useValue: config },
         DatabaseService,
         RedisService,
         AdminGuard,
+        TestModeGuard,
+        OrdersService,
         {
           provide: STORAGE,
           useFactory: () =>

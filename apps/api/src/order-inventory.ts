@@ -56,7 +56,11 @@ export async function reserveInventory(
       if (changed !== 1)
         throw new ConflictException('库存不足，请减少数量后重试');
     }
-    reserved.push({ ...item, finiteStock: !variant.unlimitedStock });
+    reserved.push({
+      variantId: item.variantId,
+      quantity: item.quantity,
+      finiteStock: !variant.unlimitedStock,
+    });
   }
   return reserved;
 }
