@@ -7,16 +7,7 @@ import {
   Routes,
   useLocation,
 } from 'react-router-dom';
-import {
-  Alert,
-  Button,
-  ConfigProvider,
-  Empty,
-  Input,
-  Select,
-  Tabs,
-  Tag,
-} from 'antd';
+import { Button, ConfigProvider, Empty, Tag } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
 import {
   ShopOutlined,
@@ -41,10 +32,13 @@ import { Dashboard } from './Dashboard';
 import { Products } from './Products';
 import { Pricing } from './Pricing';
 import { CostSetup } from './CostSetup';
+import { Orders } from './Orders';
+import { OrderTestCenter } from './OrderTestCenter';
 import './console.css';
 const navigation = [
   ['', '工作台', AppstoreOutlined],
   ['orders', '订单', ShoppingOutlined],
+  ['order-test', '测试中心', ShoppingOutlined],
   ['products', '商品', ShopOutlined],
   ['inventory', '库存', InboxOutlined],
   ['marketing', '营销', GiftOutlined],
@@ -134,11 +128,19 @@ function Shell() {
               <Route path="/admin" element={<Dashboard />} />
               <Route path="/admin/products" element={<Products />} />
               <Route path="/admin/orders" element={<Orders />} />
+              <Route path="/admin/order-test" element={<OrderTestCenter />} />
               <Route path="/admin/analysis" element={<Pricing />} />
               <Route path="/admin/analysis/costs" element={<CostSetup />} />
               {navigation
                 .filter(
-                  ([p]) => !['', 'products', 'orders', 'analysis'].includes(p),
+                  ([p]) =>
+                    ![
+                      '',
+                      'products',
+                      'orders',
+                      'order-test',
+                      'analysis',
+                    ].includes(p),
                 )
                 .map(([p, label]) => (
                   <Route
@@ -175,36 +177,6 @@ function RuntimeBanner() {
     return () => controller.abort();
   }, []);
   return <div className="runtime-line">{mode}</div>;
-}
-function Orders() {
-  return (
-    <>
-      <div className="page-heading">
-        <div>
-          <h1>门店订单</h1>
-          <p>从接单到出餐，集中处理门店订单。</p>
-        </div>
-      </div>
-      <section className="panel">
-        <Alert
-          type="info"
-          showIcon
-          title="订单功能将在后续阶段接入，当前没有可执行的订单操作"
-        />
-        <Tabs
-          items={['全部', '待接单', '待制作', '待配送', '已完成', '已取消'].map(
-            (label) => ({ key: label, label }),
-          )}
-        />
-        <div className="filters">
-          <Input placeholder="搜索订单号或顾客" disabled />
-          <Select placeholder="配送方式" disabled />
-          <Input type="date" aria-label="订单日期" disabled />
-        </div>
-        <Empty description="暂无真实订单数据" />
-      </section>
-    </>
-  );
 }
 function Placeholder({
   title,

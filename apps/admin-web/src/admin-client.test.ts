@@ -1,6 +1,30 @@
 import { afterEach, expect, test, vi } from 'vitest';
 import { createClient, AdminRequestError } from './admin-client';
 afterEach(() => vi.unstubAllGlobals());
+
+test('订单错误仅展示公开白名单，未知服务端内容不泄露', async () => {
+  const fetch = vi
+    .fn()
+    .mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({ message: '配送报价已失效，请重新获取报价' }),
+        { status: 409 },
+      ),
+    )
+    .mockResolvedValueOnce(
+      new Response(JSON.stringify({ message: 'Prisma secret details' }), {
+        status: 409,
+      }),
+    );
+  vi.stubGlobal('fetch', fetch);
+  const api = createClient('test-only');
+  await expect(api('/orders/preview')).rejects.toThrow(
+    '配送报价已失效，请重新获取报价',
+  );
+  await expect(api('/orders/preview')).rejects.toThrow(
+    '请求未能完成，请检查输入或刷新后重试',
+  );
+});
 test('空响应安全处理，非 JSON 和网络错误不泄露原始信息', async () => {
   const fetch = vi
     .fn()

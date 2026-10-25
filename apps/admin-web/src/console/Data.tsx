@@ -29,6 +29,29 @@ export function useCatalog() {
   if (!value) throw Error('缺少商品数据');
   return value;
 }
+/** POS reuses order UI without loading privileged product/cost payloads. */
+export function OrderOnlyProvider({ children }: { children: ReactNode }) {
+  const session = useSession();
+  const api = useMemo(
+    () => createClient(session.token, session.storeId),
+    [session.token, session.storeId],
+  );
+  return (
+    <Context.Provider
+      value={{
+        api,
+        products: [],
+        categories: [],
+        canEdit: ['OWNER', 'MANAGER'].includes(session.identity.role),
+        reload: async () => {},
+        notice: '',
+        notify: () => {},
+      }}
+    >
+      {children}
+    </Context.Provider>
+  );
+}
 export function CatalogProvider({ children }: { children: ReactNode }) {
   const session = useSession();
   const [products, setProducts] = useState<Product[]>([]),
