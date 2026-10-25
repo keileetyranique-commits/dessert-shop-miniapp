@@ -12,7 +12,8 @@
   "dependencies": {
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
-    "@platform/shared": "workspace:*"
+    "@platform/shared": "workspace:*",
+    "antd": "6.3.3"
   },
   "devDependencies": {
     "@types/react": "^19.1.0",
