@@ -152,3 +152,5 @@ Phase 1 商品、门店与成本 API 的实际路径、鉴权及字段约定见 
 - 配送回调
 
 Phase 1 审查修复：成本 GET 仅预览，显式 POST `/admin/costs/variants/:id/cost/snapshots` 保存快照；新增受成本权限保护的 Modifier 成本接口和 `DELETE /admin/variants/:id` 归档。完整权限及参数见 [Phase 1](PHASE-1.md)。
+
+Phase 3 新增受服务端测试模式与门店权限共同保护的订单、结算、模拟付款/配送和故障恢复接口，完整路由与角色矩阵见 [Phase 3](PHASE-3.md)。顾客结算投影不返回内部成本、利润与采购依据；不能用管理端定价模拟接口替代结算。

@@ -13,6 +13,7 @@
 
 ## 实际截图
 
+![C 版真实订单管理](screenshots/phase-3/admin-orders.png)
 ![POS 新单提醒](screenshots/phase-3/pos-new-order.png)
 ![自取完成及事件](screenshots/phase-3/pickup-completed.png)
 ![报价上涨阻断](screenshots/phase-3/quote-protection.png)
