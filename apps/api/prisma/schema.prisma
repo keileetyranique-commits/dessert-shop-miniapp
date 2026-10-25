@@ -2,6 +2,135 @@ generator client {
   provider = "prisma-client-js"
 }
 
+model OrderSettings {
+  id         String   @id @default(uuid()) @db.Uuid
+  merchantId String   @db.Uuid
+  brandId    String   @db.Uuid
+  storeId    String   @unique @db.Uuid
+  revision   Int      @default(1)
+  autoAccept Boolean  @default(false)
+  terms      Json
+  actor      String
+  updatedAt  DateTime @updatedAt @db.Timestamptz(3)
+  store      Store    @relation(fields: [merchantId, brandId, storeId], references: [merchantId, brandId, id], onDelete: Restrict)
+
+  @@unique([merchantId, brandId, storeId])
+  @@map("order_settings")
+}
+
+model MockDeliveryQuote {
+  id             String    @id @default(uuid()) @db.Uuid
+  merchantId     String    @db.Uuid
+  brandId        String    @db.Uuid
+  storeId        String    @db.Uuid
+  actor          String
+  priceFen       Int
+  distanceMeters Int
+  createdAt      DateTime  @default(now()) @db.Timestamptz(3)
+  expiresAt      DateTime  @db.Timestamptz(3)
+  invalidatedAt  DateTime? @db.Timestamptz(3)
+  store          Store     @relation(fields: [merchantId, brandId, storeId], references: [merchantId, brandId, id], onDelete: Restrict)
+
+  @@unique([storeId, id])
+  @@index([expiresAt])
+  @@map("mock_delivery_quotes")
+}
+
+model CheckoutPreview {
+  id           String   @id @default(uuid()) @db.Uuid
+  merchantId   String   @db.Uuid
+  brandId      String   @db.Uuid
+  storeId      String   @db.Uuid
+  actor        String
+  request      Json
+  publicResult Json
+  evidence     Json
+  fingerprint  String
+  createdAt    DateTime @default(now()) @db.Timestamptz(3)
+  expiresAt    DateTime @db.Timestamptz(3)
+  store        Store    @relation(fields: [merchantId, brandId, storeId], references: [merchantId, brandId, id], onDelete: Restrict)
+
+  @@index([expiresAt])
+  @@index([merchantId, brandId, storeId, actor])
+  @@map("checkout_previews")
+}
+
+model Order {
+  id                String       @id @default(uuid()) @db.Uuid
+  merchantId        String       @db.Uuid
+  brandId           String       @db.Uuid
+  storeId           String       @db.Uuid
+  actor             String
+  idempotencyKey    String
+  requestHash       String
+  request           Json
+  snapshot          Json
+  evidence          Json
+  fingerprint       String
+  mode              String
+  orderStatus       String       @default("PENDING_PAYMENT")
+  paymentStatus     String       @default("UNPAID")
+  fulfillmentStatus String       @default("NOT_STARTED")
+  reservationStatus String       @default("HELD")
+  payableFen        Int
+  testMode          Boolean      @default(true)
+  issue             String       @default("")
+  version           Int          @default(1)
+  createdAt         DateTime     @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime     @updatedAt @db.Timestamptz(3)
+  expiresAt         DateTime     @db.Timestamptz(3)
+  store             Store        @relation(fields: [merchantId, brandId, storeId], references: [merchantId, brandId, id], onDelete: Restrict)
+  items             OrderItem[]
+  events            OrderEvent[]
+
+  @@unique([storeId, id])
+  @@unique([storeId, actor, idempotencyKey])
+  @@index([merchantId, brandId, storeId, orderStatus, createdAt])
+  @@index([merchantId, brandId, storeId, updatedAt, id])
+  @@index([orderStatus, expiresAt])
+  @@map("orders")
+}
+
+model OrderItem {
+  id          String  @id @default(uuid()) @db.Uuid
+  merchantId  String  @db.Uuid
+  brandId     String  @db.Uuid
+  storeId     String  @db.Uuid
+  orderId     String  @db.Uuid
+  variantId   String  @db.Uuid
+  quantity    Int
+  finiteStock Boolean
+  snapshot    Json
+  store       Store   @relation(fields: [merchantId, brandId, storeId], references: [merchantId, brandId, id], onDelete: Restrict)
+  order       Order   @relation(fields: [storeId, orderId], references: [storeId, id], onDelete: Restrict)
+  variant     Variant @relation(fields: [storeId, variantId], references: [storeId, id], onDelete: Restrict)
+
+  @@unique([orderId, variantId])
+  @@index([storeId, variantId])
+  @@map("order_items")
+}
+
+model OrderEvent {
+  id             String   @id @default(uuid()) @db.Uuid
+  merchantId     String   @db.Uuid
+  brandId        String   @db.Uuid
+  storeId        String   @db.Uuid
+  orderId        String   @db.Uuid
+  actor          String
+  idempotencyKey String
+  requestHash    String
+  action         String
+  before         Json
+  after          Json
+  createdAt      DateTime @default(now()) @db.Timestamptz(3)
+  store          Store    @relation(fields: [merchantId, brandId, storeId], references: [merchantId, brandId, id], onDelete: Restrict)
+  order          Order    @relation(fields: [storeId, orderId], references: [storeId, id], onDelete: Restrict)
+
+  @@unique([orderId, idempotencyKey])
+  @@index([storeId, orderId, createdAt, id])
+  @@map("order_events")
+}
+
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
@@ -64,6 +193,12 @@ model Store {
   mediaAssets                   MediaAsset[]
   pricingRules                  PricingRule[]
   pricingSimulations            PricingSimulation[]
+  orderSettings                 OrderSettings?
+  checkoutPreviews              CheckoutPreview[]
+  deliveryQuotes                MockDeliveryQuote[]
+  orders                        Order[]
+  orderItems                    OrderItem[]
+  orderEvents                   OrderEvent[]
 
   @@unique([merchantId, brandId, id])
   @@index([merchantId, brandId])
@@ -143,6 +278,7 @@ model Variant {
   store                         Store                    @relation(fields: [merchantId, brandId, storeId], references: [merchantId, brandId, id], onDelete: Restrict)
   product                       Product                  @relation(fields: [storeId, productId], references: [storeId, id], onDelete: Restrict)
   inventoryMovementRecords      InventoryMovement[]
+  orderItems                    OrderItem[]
   recipeRecords                 Recipe[]
   packagingConfigurationRecords PackagingConfiguration[]
   costSnapshotRecords           CostSnapshot[]
