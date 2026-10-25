@@ -115,7 +115,9 @@ export async function readCheckout(
     ruleId: pricing.evidence.rule?.id ?? null,
     terms,
     month,
-    quoteId: quote?.id ?? null,
+    quote: quote
+      ? { priceFen: quote.priceFen, distanceMeters: quote.distanceMeters }
+      : null,
     lines,
     costs: pricing.evidence.lines.map((line) => ({
       input: line.cost.input,

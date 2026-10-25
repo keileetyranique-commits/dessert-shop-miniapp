@@ -3,6 +3,24 @@ import { describe, it } from 'node:test';
 import { transitionOrder, initialOrderState } from './orders.js';
 
 describe('订单、支付和履约状态', () => {
+  it('履约异常可明确终止并退款，但不能撤销已交付订单', () => {
+    let state = initialOrderState('DELIVERY');
+    for (const action of [
+      'PAY',
+      'ACCEPT',
+      'READY',
+      'DISPATCH',
+      'DRIVER_FAIL',
+    ] as const)
+      state = transitionOrder(state, action);
+    const cancelled = transitionOrder(state, 'RECOVER_CANCEL');
+    assert.equal(cancelled.payment, 'REFUNDED');
+    assert.equal(cancelled.reservation, 'RELEASED');
+    assert.deepEqual(transitionOrder(cancelled, 'RECOVER_CANCEL'), cancelled);
+    for (const action of ['DISPATCH', 'DRIVER_ACCEPT', 'DELIVERED'] as const)
+      state = transitionOrder(state, action);
+    assert.throws(() => transitionOrder(state, 'RECOVER_CANCEL'));
+  });
   it('自取完成只消耗一次预占库存', () => {
     let state = initialOrderState('PICKUP');
     for (const action of ['PAY', 'ACCEPT', 'READY', 'PICKUP'] as const)

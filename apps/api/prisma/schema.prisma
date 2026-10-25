@@ -31,6 +31,8 @@ model MockDeliveryQuote {
   invalidatedAt  DateTime? @db.Timestamptz(3)
   store          Store     @relation(fields: [merchantId, brandId, storeId], references: [merchantId, brandId, id], onDelete: Restrict)
 
+  orders Order[]
+
   @@unique([storeId, id])
   @@index([expiresAt])
   @@map("mock_delivery_quotes")
@@ -82,6 +84,9 @@ model Order {
   store             Store        @relation(fields: [merchantId, brandId, storeId], references: [merchantId, brandId, id], onDelete: Restrict)
   items             OrderItem[]
   events            OrderEvent[]
+
+  deliveryQuoteId String?            @db.Uuid
+  deliveryQuote   MockDeliveryQuote? @relation(fields: [storeId, deliveryQuoteId], references: [storeId, id], onDelete: Restrict)
 
   @@unique([storeId, id])
   @@unique([storeId, actor, idempotencyKey])

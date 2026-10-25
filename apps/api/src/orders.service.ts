@@ -127,7 +127,7 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
         where: { id: { in: previews.map((p) => p.id) } },
       });
     const quotes = await this.db.mockDeliveryQuote.findMany({
-      where: { expiresAt: { lt: before } },
+      where: { expiresAt: { lt: before }, orders: { none: {} } },
       select: { id: true },
       take: 100,
     });
@@ -236,6 +236,7 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
           evidence: jsonValue(value.evidence),
           fingerprint: value.fingerprint,
           mode: checkout.fulfillment,
+          deliveryQuoteId: checkout.quoteId ?? null,
           payableFen: value.publicResult.payableFen,
           expiresAt: new Date(Date.now() + 15 * 60000),
         },
@@ -268,12 +269,100 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
       return publicOrder(order);
     });
   }
+  async requote(
+    r: AdminRequest,
+    orderId: string,
+    key: string,
+    increase: boolean,
+  ) {
+    return this.transaction(async (tx) => {
+      const locked = await tx.$queryRaw<{ id: string }[]>(
+        Prisma.sql`SELECT id FROM orders WHERE id = ${orderId}::uuid AND "merchantId" = ${r.scope.merchantId}::uuid AND "brandId" = ${r.scope.brandId}::uuid AND "storeId" = ${r.scope.storeId}::uuid FOR UPDATE`,
+      );
+      if (!locked.length) throw new NotFoundException('订单不存在');
+      const order = await tx.order.findUniqueOrThrow({
+        where: { id: orderId },
+      });
+      const hash = requestFingerprint({ increase });
+      const prior = await tx.orderEvent.findUnique({
+        where: { orderId_idempotencyKey: { orderId, idempotencyKey: key } },
+      });
+      if (prior) {
+        if (prior.requestHash !== hash)
+          throw new ConflictException('操作编号已用于其他操作');
+        return publicOrder(order);
+      }
+      if (
+        order.mode !== 'DELIVERY' ||
+        ![
+          'PENDING_PAYMENT',
+          'AWAITING_ACCEPTANCE',
+          'PREPARING',
+          'READY',
+        ].includes(order.orderStatus) ||
+        order.fulfillmentStatus === 'DISPATCHING'
+      )
+        throw new ConflictException('当前订单不能重新询价，请先核对配送状态');
+      const original = z
+        .object({
+          pricing: z.object({
+            input: z.object({
+              quote: z.object({
+                priceFen: z.number().int(),
+                distanceMeters: z.number().int(),
+              }),
+            }),
+          }),
+        })
+        .parse(order.evidence).pricing.input.quote;
+      const now = new Date();
+      const quote = await tx.mockDeliveryQuote.create({
+        data: {
+          ...r.scope,
+          actor: order.actor,
+          priceFen: original.priceFen + (increase ? 100 : 0),
+          distanceMeters: original.distanceMeters,
+          createdAt: now,
+          expiresAt: new Date(now.getTime() + 15 * 60000),
+        },
+      });
+      const updated = await tx.order.update({
+        where: { id: orderId },
+        data: {
+          deliveryQuoteId: quote.id,
+          version: { increment: 1 },
+          issue: increase
+            ? '模拟配送费已变化，请取消后重新结算；原成交金额不会自动修改'
+            : '',
+        },
+      });
+      await tx.orderEvent.create({
+        data: {
+          ...r.scope,
+          orderId,
+          actor: r.identity.id,
+          idempotencyKey: key,
+          requestHash: hash,
+          action: increase ? 'QUOTE_CHANGED' : 'REQUOTED',
+          before: jsonValue({ quoteId: order.deliveryQuoteId }),
+          after: jsonValue({
+            quoteId: quote.id,
+            priceFen: quote.priceFen,
+            expiresAt: quote.expiresAt,
+          }),
+        },
+      });
+      return publicOrder(updated);
+    });
+  }
   async action(
     r: AdminRequest,
     orderId: string,
     action: OrderAction,
     idempotencyKey: string,
   ) {
+    if (action === 'RECOVER_CANCEL' && r.identity.role !== 'OWNER')
+      throw new ForbiddenException('仅老板可终止制作中的异常订单');
     return this.transaction(async (tx) => {
       const locked = await tx.$queryRaw<{ id: string }[]>(
         Prisma.sql`SELECT id FROM orders WHERE id = ${orderId}::uuid AND "merchantId" = ${r.scope.merchantId}::uuid AND "brandId" = ${r.scope.brandId}::uuid AND "storeId" = ${r.scope.storeId}::uuid FOR UPDATE`,
@@ -308,6 +397,8 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
         )
           throw new ConflictException('订单已超时，请取消后重新下单');
         const request = savedRequest.parse(order.request);
+        if (order.deliveryQuoteId)
+          request.checkout.quoteId = order.deliveryQuoteId;
         const own = Object.fromEntries(
           order.items
             .filter((i) => i.finiteStock)

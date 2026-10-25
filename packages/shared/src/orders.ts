@@ -1,4 +1,5 @@
 export type OrderAction =
+  | 'RECOVER_CANCEL'
   | 'PAY'
   | 'PAY_FAIL'
   | 'ACCEPT'
@@ -65,6 +66,11 @@ export function transitionOrder(
     next.reservation = 'RELEASED';
   };
   switch (action) {
+    case 'RECOVER_CANCEL':
+      if (current.order === 'CANCELLED') return next;
+      if (!['PREPARING', 'READY'].includes(current.order)) return invalid();
+      cancel();
+      break;
     case 'PAY':
       if (current.payment === 'PAID' || current.order === 'CANCELLED')
         return next;

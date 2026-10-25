@@ -485,6 +485,304 @@ test('订单存储：租户复合外键、幂等键、不可变快照与事务�
         .reservedQuantity,
       0,
     );
+    for (const fulfillment of ['DELIVERY', 'DINE_IN'])
+      await db.packagingConfiguration.create({
+        data: { ...scope, variantId: variant.id, fulfillment },
+      });
+    await db.variant.update({
+      where: { id: variant.id },
+      data: { stockQuantity: 10 },
+    });
+    await db.orderSettings.update({
+      where: { storeId: scope.storeId },
+      data: {
+        terms: { ...defaultCheckoutTerms, customerDeliveryFeeFen: 1100 },
+        revision: { increment: 1 },
+      },
+    });
+    for (const distanceMeters of [3000, 5000, 8000]) {
+      const quote = await db.mockDeliveryQuote.create({
+        data: {
+          ...scope,
+          actor: caller.identity.id,
+          distanceMeters,
+          priceFen: 600 + (distanceMeters / 1000 - 3) * 100,
+          expiresAt: new Date(Date.now() + 60000),
+        },
+      });
+      const preview = await service.preview(caller, {
+        ...checkout,
+        fulfillment: 'DELIVERY',
+        quoteId: quote.id,
+      });
+      assert.equal(preview.decision, 'PASS');
+      const delivery = await service.create(caller, {
+        previewId: preview.previewId,
+        idempotencyKey: randomUUID(),
+        acceptTopup: false,
+      });
+      for (const a of ['PAY', 'ACCEPT', 'READY'] as const)
+        await service.action(caller, delivery.id, a, randomUUID());
+      await db.mockDeliveryQuote.update({
+        where: { id: quote.id },
+        data: { invalidatedAt: new Date() },
+      });
+      await assert.rejects(
+        service.action(caller, delivery.id, 'DISPATCH', randomUUID()),
+      );
+      const renewed = await service.requote(
+        caller,
+        delivery.id,
+        'requote-retry',
+        false,
+      );
+      assert.equal(
+        (await service.requote(caller, delivery.id, 'requote-retry', false))
+          .version,
+        renewed.version,
+      );
+      for (const a of [
+        'DISPATCH',
+        'DRIVER_FAIL',
+        'DISPATCH',
+        'DRIVER_ACCEPT',
+        'DELIVERED',
+      ] as const)
+        await service.action(caller, delivery.id, a, randomUUID());
+      assert.equal(
+        (await service.action(caller, delivery.id, 'DELIVERED', randomUUID()))
+          .orderStatus,
+        'COMPLETED',
+      );
+      assert.deepEqual(
+        (await db.order.findUniqueOrThrow({ where: { id: delivery.id } }))
+          .snapshot,
+        delivery.snapshot,
+      );
+      assert.equal(
+        await db.orderEvent.count({
+          where: { orderId: delivery.id, action: 'DELIVERED' },
+        }),
+        1,
+      );
+    }
+    const dinePreview = await service.preview(caller, {
+      ...checkout,
+      fulfillment: 'DINE_IN',
+    });
+    const dine = await service.create(caller, {
+      previewId: dinePreview.previewId,
+      idempotencyKey: randomUUID(),
+      acceptTopup: false,
+    });
+    for (const a of ['PAY', 'ACCEPT', 'READY', 'PICKUP'] as const)
+      await service.action(caller, dine.id, a, randomUUID());
+    const changedQuote = await db.mockDeliveryQuote.create({
+      data: {
+        ...scope,
+        actor: caller.identity.id,
+        distanceMeters: 3000,
+        priceFen: 600,
+        expiresAt: new Date(Date.now() + 60000),
+      },
+    });
+    const changedPreview = await service.preview(caller, {
+      ...checkout,
+      fulfillment: 'DELIVERY',
+      quoteId: changedQuote.id,
+    });
+    const changed = await service.create(caller, {
+      previewId: changedPreview.previewId,
+      idempotencyKey: randomUUID(),
+      acceptTopup: false,
+    });
+    for (const a of ['PAY', 'ACCEPT', 'READY'] as const)
+      await service.action(caller, changed.id, a, randomUUID());
+    await service.requote(caller, changed.id, randomUUID(), true);
+    await assert.rejects(
+      service.action(caller, changed.id, 'DISPATCH', randomUUID()),
+    );
+    await assert.rejects(
+      service.action(
+        { ...caller, identity: { ...caller.identity, role: 'MANAGER' } },
+        changed.id,
+        'RECOVER_CANCEL',
+        randomUUID(),
+      ),
+    );
+    assert.equal(
+      (
+        await service.action(
+          caller,
+          changed.id,
+          'RECOVER_CANCEL',
+          'recover-cancel',
+        )
+      ).paymentStatus,
+      'REFUNDED',
+    );
+    await service.action(
+      caller,
+      changed.id,
+      'RECOVER_CANCEL',
+      'recover-cancel',
+    );
+    assert.equal(
+      (await db.variant.findUniqueOrThrow({ where: { id: variant.id } }))
+        .stockQuantity,
+      6,
+    );
+    assert.equal(
+      (await db.variant.findUniqueOrThrow({ where: { id: variant.id } }))
+        .reservedQuantity,
+      0,
+    );
+    await db.variant.update({
+      where: { id: variant.id },
+      data: { stockQuantity: 2 },
+    });
+    await db.orderSettings.update({
+      where: { storeId: scope.storeId },
+      data: { terms: defaultCheckoutTerms, revision: { increment: 1 } },
+    });
+    // Combined real checkout: multiple variants, modifiers, order packaging and two coupon payers.
+    const extra = await db.variant.create({
+      data: {
+        ...scope,
+        productId: product.id,
+        name: '小份',
+        salePriceFen: 1000,
+        unlimitedStock: true,
+      },
+    });
+    await db.recipe.create({
+      data: {
+        ...scope,
+        variantId: extra.id,
+        version: 1,
+        otherVariableCostFen: 200,
+      },
+    });
+    await db.packagingConfiguration.create({
+      data: { ...scope, variantId: extra.id, fulfillment: 'PICKUP' },
+    });
+    const group = await db.modifierGroup.create({
+      data: { ...scope, productId: product.id, name: '选项' },
+    });
+    const modifier = await db.modifier.create({
+      data: {
+        ...scope,
+        groupId: group.id,
+        name: '配料',
+        salePriceFen: 200,
+        costFen: 50,
+      },
+    });
+    const bag = await db.packagingItem.create({
+      data: { ...scope, name: '整单袋', scope: 'ORDER', unitCostFen: 80 },
+    });
+    await db.orderSettings.update({
+      where: { storeId: scope.storeId },
+      data: {
+        terms: {
+          ...defaultCheckoutTerms,
+          orderPackaging: [{ packagingItemId: bag.id, quantity: 1 }],
+          packagingRevenueFen: 100,
+          merchantDiscountFen: 100,
+          platformDiscountFen: 50,
+          promotion: { thresholdFen: 3000, discountFen: 200 },
+        },
+        revision: { increment: 1 },
+      },
+    });
+    const combo = await service.preview(caller, {
+      fulfillment: 'PICKUP',
+      items: [
+        { variantId: variant.id, quantity: 2, modifierIds: [modifier.id] },
+        { variantId: extra.id, quantity: 1, modifierIds: [] },
+      ],
+    });
+    assert.equal(combo.decision, 'PASS');
+    assert.equal(combo.goodsFen, 5380);
+    assert.equal(combo.merchantDiscountFen, 300);
+    assert.equal(combo.platformDiscountFen, 50);
+    assert.equal(combo.payableFen, 5130);
+    const comboOrder = await service.create(caller, {
+      previewId: combo.previewId,
+      idempotencyKey: randomUUID(),
+      acceptTopup: false,
+    });
+    await service.action(caller, comboOrder.id, 'CANCEL', randomUUID());
+    // Missing modifier cost is not an explicit zero and must block checkout.
+    await db.modifier.update({
+      where: { id: modifier.id },
+      data: { costFen: null },
+    });
+    const incomplete = await service.preview(caller, {
+      ...checkout,
+      items: [{ ...checkout.items[0]!, modifierIds: [modifier.id] }],
+    });
+    assert.equal(incomplete.decision, 'MANUAL_REVIEW');
+    await assert.rejects(
+      service.create(caller, {
+        previewId: incomplete.previewId,
+        idempotencyKey: randomUUID(),
+        acceptTopup: true,
+      }),
+    );
+    await db.orderSettings.update({
+      where: { storeId: scope.storeId },
+      data: { terms: defaultCheckoutTerms, revision: { increment: 1 } },
+    });
+    const rule = await db.pricingRule.findFirstOrThrow({ where: scope });
+    await db.pricingRule.update({
+      where: { id: rule.id },
+      data: {
+        rules: {
+          ...(rule.rules as Record<string, unknown>),
+          minimumProfitFen: 1500,
+          targetProfitFen: 1500,
+          allowTopup: true,
+        },
+      },
+    });
+    const topupQuote = await db.mockDeliveryQuote.create({
+      data: {
+        ...scope,
+        actor: caller.identity.id,
+        priceFen: 600,
+        distanceMeters: 3000,
+        expiresAt: new Date(Date.now() + 60000),
+      },
+    });
+    const topup = await service.preview(caller, {
+      ...checkout,
+      fulfillment: 'DELIVERY',
+      quoteId: topupQuote.id,
+    });
+    assert.equal(topup.decision, 'TOPUP');
+    await assert.rejects(
+      service.create(caller, {
+        previewId: topup.previewId,
+        idempotencyKey: randomUUID(),
+        acceptTopup: false,
+      }),
+    );
+    const accepted = await service.create(caller, {
+      previewId: topup.previewId,
+      idempotencyKey: randomUUID(),
+      acceptTopup: true,
+    });
+    assert.equal(
+      accepted.payableFen,
+      topup.payableFen + topup.requiredTopupFen!,
+    );
+    await service.action(caller, accepted.id, 'PAY', randomUUID());
+    await service.action(caller, accepted.id, 'REJECT', randomUUID());
+    await db.pricingRule.update({
+      where: { id: rule.id },
+      data: { rules: rule.rules! },
+    });
     const tokens = [0, 1, 2].map(() => randomBytes(32).toString('hex'));
     const identities = tokens.map((token, i) => ({
       token,
@@ -529,6 +827,7 @@ test('订单存储：租户复合外键、幂等键、不可变快照与事务�
       const routes: [string, string][] = [
         ['/orders', 'GET'],
         ['/orders/menu', 'GET'],
+        ['/orders/packaging', 'GET'],
         ['/orders/settings', 'GET'],
         ['/orders/settings', 'PUT'],
         ['/orders/preview', 'POST'],
@@ -536,6 +835,7 @@ test('订单存储：租户复合外键、幂等键、不可变快照与事务�
         [`/orders/${created.id}`, 'GET'],
         [`/orders/${created.id}/actions`, 'POST'],
         ['/order-test/quotes', 'POST'],
+        [`/order-test/orders/${created.id}/requote`, 'POST'],
         [`/order-test/quotes/${quote.id}/invalidate`, 'POST'],
         [`/order-test/orders/${created.id}/timeout`, 'POST'],
       ];
@@ -709,14 +1009,17 @@ test('订单存储：租户复合外键、幂等键、不可变快照与事务�
     await db.pricingRule.deleteMany({ where: { merchantId } });
     await db.recipe.deleteMany({ where: { merchantId } });
     await db.packagingConfiguration.deleteMany({ where: { merchantId } });
+    await db.packagingItem.deleteMany({ where: { merchantId } });
+    await db.modifier.deleteMany({ where: { merchantId } });
+    await db.modifierGroup.deleteMany({ where: { merchantId } });
     await db.monthlyFixedCost.deleteMany({ where: { merchantId } });
     await db.costAllocationRule.deleteMany({ where: { merchantId } });
     await db.orderSettings.deleteMany({ where: { merchantId } });
-    await db.mockDeliveryQuote.deleteMany({ where: { merchantId } });
     await db.inventoryMovement.deleteMany({ where: { merchantId } });
     await db.orderEvent.deleteMany({ where: { merchantId } });
     await db.orderItem.deleteMany({ where: { merchantId } });
     await db.order.deleteMany({ where: { merchantId } });
+    await db.mockDeliveryQuote.deleteMany({ where: { merchantId } });
     await db.variant.deleteMany({ where: { merchantId } });
     await db.product.deleteMany({ where: { merchantId } });
     await db.category.deleteMany({ where: { merchantId } });

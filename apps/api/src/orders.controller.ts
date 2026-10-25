@@ -99,6 +99,13 @@ export class OrdersController {
     });
     return this.settings(r);
   }
+  @Get('packaging') async packaging(@Req() r: AdminRequest) {
+    return this.db.packagingItem.findMany({
+      where: { ...r.scope, scope: 'ORDER', status: 'ACTIVE', deletedAt: null },
+      select: { id: true, name: true },
+      orderBy: { name: 'asc' },
+    });
+  }
   @Get('menu') async menu(@Req() r: AdminRequest) {
     return this.db.product.findMany({
       where: { ...r.scope, deletedAt: null, status: 'ACTIVE' },
@@ -237,6 +244,7 @@ export class OrdersController {
       z
         .object({
           action: z.enum([
+            'RECOVER_CANCEL',
             'PAY',
             'PAY_FAIL',
             'ACCEPT',
@@ -273,6 +281,24 @@ export class OrderTestController {
     @Inject(DatabaseService) private readonly db: DatabaseService,
     @Inject(OrdersService) private readonly orders: OrdersService,
   ) {}
+  @Post('orders/:id/requote') requote(
+    @Req() r: AdminRequest,
+    @Param('id') value: string,
+    @Body() body: unknown,
+  ) {
+    const data = input(
+      z
+        .object({ idempotencyKey: operationKey, increase: z.boolean() })
+        .strict(),
+      body,
+    );
+    return this.orders.requote(
+      r,
+      input(uuid, value),
+      data.idempotencyKey,
+      data.increase,
+    );
+  }
   @Post('quotes') async quote(@Req() r: AdminRequest, @Body() body: unknown) {
     const { distanceMeters } = input(
       z
