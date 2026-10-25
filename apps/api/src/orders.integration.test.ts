@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
 import { parseConfig } from './config.js';
 import { reserveInventory, settleInventory } from './order-inventory.js';
+import { readCheckout, defaultCheckoutTerms } from './checkout-reader.js';
 
 test('订单存储：租户复合外键、幂等键、不可变快照与事务回滚', async () => {
   const config = parseConfig(process.env);
@@ -42,6 +43,84 @@ test('订单存储：租户复合外键、幂等键、不可变快照与事务�
         stockQuantity: 1,
       },
     });
+    const checkout = {
+      fulfillment: 'PICKUP' as const,
+      items: [{ variantId: variant.id, quantity: 1, modifierIds: [] }],
+    };
+    const preview = await db.$transaction((tx) =>
+      readCheckout(tx, scope, 'test-owner', checkout),
+    );
+    assert.equal(preview.publicResult.decision, 'MANUAL_REVIEW');
+    assert.equal(preview.publicResult.payableFen, 1880);
+    assert.equal(preview.publicResult.lines[0]!.productName, '商品');
+    for (const forbidden of [
+      'costFen',
+      'variableCostFen',
+      'contributionProfitFen',
+      'recipeId',
+      'purchaseIds',
+      'minimumProfitFen',
+    ])
+      assert.equal(
+        JSON.stringify(preview.publicResult).includes(forbidden),
+        false,
+      );
+    await db.orderSettings.create({
+      data: { ...scope, actor: 'test-owner', terms: defaultCheckoutTerms },
+    });
+    const configured = await db.$transaction((tx) =>
+      readCheckout(tx, scope, 'test-owner', checkout),
+    );
+    assert.equal(configured.publicResult.decision, 'MANUAL_REVIEW');
+    assert.notEqual(configured.fingerprint, preview.fingerprint);
+    const quote = await db.mockDeliveryQuote.create({
+      data: {
+        ...scope,
+        actor: 'test-owner',
+        priceFen: 600,
+        distanceMeters: 3000,
+        expiresAt: new Date(Date.now() + 60000),
+      },
+    });
+    await assert.rejects(
+      db.$transaction((tx) =>
+        readCheckout(tx, scope, 'different-actor', {
+          ...checkout,
+          fulfillment: 'DELIVERY',
+          quoteId: quote.id,
+        }),
+      ),
+    );
+    await assert.rejects(
+      db.$transaction((tx) =>
+        readCheckout(tx, other, 'test-owner', {
+          ...checkout,
+          fulfillment: 'DELIVERY',
+          quoteId: quote.id,
+        }),
+      ),
+    );
+    const delivery = await db.$transaction((tx) =>
+      readCheckout(tx, scope, 'test-owner', {
+        ...checkout,
+        fulfillment: 'DELIVERY',
+        quoteId: quote.id,
+      }),
+    );
+    assert.equal(delivery.publicResult.decision, 'MANUAL_REVIEW');
+    await db.mockDeliveryQuote.update({
+      where: { id: quote.id },
+      data: { invalidatedAt: new Date() },
+    });
+    await assert.rejects(
+      db.$transaction((tx) =>
+        readCheckout(tx, scope, 'test-owner', {
+          ...checkout,
+          fulfillment: 'DELIVERY',
+          quoteId: quote.id,
+        }),
+      ),
+    );
     const data = {
       ...scope,
       actor: 'test-owner',
@@ -246,6 +325,8 @@ test('订单存储：租户复合外键、幂等键、不可变快照与事务�
       0,
     );
   } finally {
+    await db.orderSettings.deleteMany({ where: { merchantId } });
+    await db.mockDeliveryQuote.deleteMany({ where: { merchantId } });
     await db.inventoryMovement.deleteMany({ where: { merchantId } });
     await db.orderEvent.deleteMany({ where: { merchantId } });
     await db.orderItem.deleteMany({ where: { merchantId } });
