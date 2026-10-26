@@ -229,6 +229,23 @@ test('订单存储：租户复合外键、幂等键、不可变快照与事务�
         data: { reservedQuantity: 2 },
       }),
     );
+    await assert.rejects(
+      db.orderItem.delete({ where: { id: item.id } }),
+      /Immutable order history/,
+    );
+    await assert.rejects(
+      db.orderEvent.delete({ where: { id: event.id } }),
+      /Immutable order history/,
+    );
+    await assert.rejects(
+      db.order.delete({ where: { id: order.id } }),
+      /Immutable order history/,
+    );
+    await db.order.update({
+      where: { id: order.id },
+      data: { issue: '合法状态字段更新', version: { increment: 1 } },
+    });
+    assert.equal(await db.orderEvent.count({ where: { id: event.id } }), 1);
     const rollbackKey = randomUUID();
     await assert.rejects(
       db.$transaction(async (tx) => {
@@ -521,11 +538,30 @@ test('订单存储：租户复合外键、幂等键、不可变快照与事务�
         idempotencyKey: randomUUID(),
         acceptTopup: false,
       });
-      for (const a of ['PAY', 'ACCEPT', 'READY'] as const)
-        await service.action(caller, delivery.id, a, randomUUID());
+      await service.action(caller, delivery.id, 'PAY', randomUUID());
+      // A preparation longer than 16 minutes and subsequent price/rule edits do not rewrite the paid contract.
+      const savedRule = await db.pricingRule.findFirstOrThrow({ where: scope });
+      await db.pricingRule.update({
+        where: { id: savedRule.id },
+        data: {
+          rules: {
+            ...(savedRule.rules as Record<string, unknown>),
+            minimumProfitFen: 99999,
+          },
+        },
+      });
+      await db.variant.update({
+        where: { id: variant.id },
+        data: { salePriceFen: 9999 },
+      });
+      await service.action(caller, delivery.id, 'ACCEPT', randomUUID());
+      await service.action(caller, delivery.id, 'READY', randomUUID());
       await db.mockDeliveryQuote.update({
         where: { id: quote.id },
-        data: { invalidatedAt: new Date() },
+        data: {
+          createdAt: new Date(Date.now() - 17 * 60000),
+          expiresAt: new Date(Date.now() - 60000),
+        },
       });
       await assert.rejects(
         service.action(caller, delivery.id, 'DISPATCH', randomUUID()),
@@ -535,10 +571,18 @@ test('订单存储：租户复合外键、幂等键、不可变快照与事务�
         delivery.id,
         'requote-retry',
         false,
+        true,
       );
       assert.equal(
-        (await service.requote(caller, delivery.id, 'requote-retry', false))
-          .version,
+        (
+          await service.requote(
+            caller,
+            delivery.id,
+            'requote-retry',
+            false,
+            true,
+          )
+        ).version,
         renewed.version,
       );
       for (const a of [
@@ -565,6 +609,14 @@ test('订单存储：租户复合外键、幂等键、不可变快照与事务�
         }),
         1,
       );
+      await db.pricingRule.update({
+        where: { id: savedRule.id },
+        data: { rules: savedRule.rules! },
+      });
+      await db.variant.update({
+        where: { id: variant.id },
+        data: { salePriceFen: 1990 },
+      });
     }
     const dinePreview = await service.preview(caller, {
       ...checkout,
@@ -598,7 +650,76 @@ test('订单存储：租户复合外键、幂等键、不可变快照与事务�
     });
     for (const a of ['PAY', 'ACCEPT', 'READY'] as const)
       await service.action(caller, changed.id, a, randomUUID());
+    const deliveryPackaging = await db.packagingConfiguration.findFirstOrThrow({
+      where: { ...scope, variantId: variant.id, fulfillment: 'DELIVERY' },
+    });
+    await db.packagingConfiguration.delete({
+      where: { id: deliveryPackaging.id },
+    });
+    await assert.rejects(
+      service.action(caller, changed.id, 'DISPATCH', 'missing-cost'),
+    );
+    assert.match(
+      (await db.order.findUniqueOrThrow({ where: { id: changed.id } })).issue,
+      /资料不完整/,
+    );
+    await db.packagingConfiguration.create({ data: deliveryPackaging });
+    const originalRecipe = await db.recipe.findFirstOrThrow({
+      where: { ...scope, variantId: variant.id, active: true },
+    });
+    await db.recipe.update({
+      where: { id: originalRecipe.id },
+      data: { active: false },
+    });
+    const expensive = await db.recipe.create({
+      data: {
+        ...scope,
+        variantId: variant.id,
+        version: 2,
+        otherVariableCostFen: 99999,
+      },
+    });
+    await assert.rejects(
+      service.action(caller, changed.id, 'DISPATCH', 'cost-increased'),
+    );
+    const blockedCount = await db.orderEvent.count({
+      where: { orderId: changed.id, action: 'FULFILLMENT_BLOCKED' },
+    });
+    await assert.rejects(
+      service.action(caller, changed.id, 'DISPATCH', 'cost-increased'),
+    );
+    assert.equal(
+      await db.orderEvent.count({
+        where: { orderId: changed.id, action: 'FULFILLMENT_BLOCKED' },
+      }),
+      blockedCount,
+    );
+    await db.recipe.delete({ where: { id: expensive.id } });
+    await db.recipe.update({
+      where: { id: originalRecipe.id },
+      data: { active: true },
+    });
     await service.requote(caller, changed.id, randomUUID(), true);
+    await assert.rejects(
+      service.requote(
+        { ...caller, identity: { ...caller.identity, role: 'MANAGER' } },
+        changed.id,
+        randomUUID(),
+        false,
+        true,
+      ),
+    );
+    await assert.rejects(
+      service.requote(
+        { ...caller, scope: other },
+        changed.id,
+        randomUUID(),
+        false,
+        true,
+      ),
+    );
+    // Normal renewal cannot erase an increased provider quote.
+    await service.requote(caller, changed.id, 'renew-increased', false, true);
     await assert.rejects(
       service.action(caller, changed.id, 'DISPATCH', randomUUID()),
     );
@@ -825,6 +946,7 @@ test('订单存储：租户复合外键、幂等键、不可变快照与事务�
           ...(body === undefined ? {} : { body: JSON.stringify(body) }),
         });
       const routes: [string, string][] = [
+        [`/orders/${created.id}/requote`, 'POST'],
         ['/orders', 'GET'],
         ['/orders/menu', 'GET'],
         ['/orders/packaging', 'GET'],
@@ -1005,6 +1127,15 @@ test('订单存储：租户复合外键、幂等键、不可变快照与事务�
     }
   } finally {
     await app?.close();
+    // Disposable integration DB only: privileged cleanup is not an application archival path.
+    await db.$transaction(async (tx) => {
+      await tx.$executeRawUnsafe(
+        "SET LOCAL session_replication_role = 'replica'",
+      );
+      await tx.orderEvent.deleteMany({ where: { merchantId } });
+      await tx.orderItem.deleteMany({ where: { merchantId } });
+      await tx.order.deleteMany({ where: { merchantId } });
+    });
     await db.checkoutPreview.deleteMany({ where: { merchantId } });
     await db.pricingRule.deleteMany({ where: { merchantId } });
     await db.recipe.deleteMany({ where: { merchantId } });
@@ -1016,9 +1147,6 @@ test('订单存储：租户复合外键、幂等键、不可变快照与事务�
     await db.costAllocationRule.deleteMany({ where: { merchantId } });
     await db.orderSettings.deleteMany({ where: { merchantId } });
     await db.inventoryMovement.deleteMany({ where: { merchantId } });
-    await db.orderEvent.deleteMany({ where: { merchantId } });
-    await db.orderItem.deleteMany({ where: { merchantId } });
-    await db.order.deleteMany({ where: { merchantId } });
     await db.mockDeliveryQuote.deleteMany({ where: { merchantId } });
     await db.variant.deleteMany({ where: { merchantId } });
     await db.product.deleteMany({ where: { merchantId } });

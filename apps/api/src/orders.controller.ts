@@ -270,6 +270,23 @@ export class OrdersController {
       data.idempotencyKey,
     );
   }
+  @Post(':id/requote') renewQuote(
+    @Req() r: AdminRequest,
+    @Param('id') value: string,
+    @Body() body: unknown,
+  ) {
+    const data = input(
+      z.object({ idempotencyKey: operationKey }).strict(),
+      body,
+    );
+    return this.orders.requote(
+      r,
+      input(uuid, value),
+      data.idempotencyKey,
+      false,
+      true,
+    );
+  }
 }
 
 @Controller('admin/order-test')

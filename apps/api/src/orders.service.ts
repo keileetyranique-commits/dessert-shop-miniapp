@@ -21,6 +21,7 @@ import type { AdminRequest } from './auth.js';
 import { checkoutInput, requestFingerprint } from './order-security.js';
 import { readCheckout, jsonValue } from './checkout-reader.js';
 import { reserveInventory, settleInventory } from './order-inventory.js';
+import { fulfillmentProblem } from './order-fulfillment.js';
 
 const savedRequest = z
   .object({ checkout: checkoutInput, acceptTopup: z.boolean() })
@@ -274,7 +275,10 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
     orderId: string,
     key: string,
     increase: boolean,
+    preserveCurrent = false,
   ) {
+    if (preserveCurrent && r.identity.role !== 'OWNER')
+      throw new ForbiddenException('仅老板可重新确认配送报价');
     return this.transaction(async (tx) => {
       const locked = await tx.$queryRaw<{ id: string }[]>(
         Prisma.sql`SELECT id FROM orders WHERE id = ${orderId}::uuid AND "merchantId" = ${r.scope.merchantId}::uuid AND "brandId" = ${r.scope.brandId}::uuid AND "storeId" = ${r.scope.storeId}::uuid FOR UPDATE`,
@@ -283,7 +287,9 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
       const order = await tx.order.findUniqueOrThrow({
         where: { id: orderId },
       });
-      const hash = requestFingerprint({ increase });
+      const hash = requestFingerprint(
+        preserveCurrent ? { renew: true } : { increase },
+      );
       const prior = await tx.orderEvent.findUnique({
         where: { orderId_idempotencyKey: { orderId, idempotencyKey: key } },
       });
@@ -316,11 +322,17 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
         })
         .parse(order.evidence).pricing.input.quote;
       const now = new Date();
+      const currentQuote = preserveCurrent
+        ? await tx.mockDeliveryQuote.findFirstOrThrow({
+            where: { ...r.scope, id: order.deliveryQuoteId ?? '' },
+          })
+        : null;
       const quote = await tx.mockDeliveryQuote.create({
         data: {
           ...r.scope,
           actor: order.actor,
-          priceFen: original.priceFen + (increase ? 100 : 0),
+          priceFen:
+            currentQuote?.priceFen ?? original.priceFen + (increase ? 100 : 0),
           distanceMeters: original.distanceMeters,
           createdAt: now,
           expiresAt: new Date(now.getTime() + 15 * 60000),
@@ -331,9 +343,11 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
         data: {
           deliveryQuoteId: quote.id,
           version: { increment: 1 },
-          issue: increase
-            ? '模拟配送费已变化，请取消后重新结算；原成交金额不会自动修改'
-            : '',
+          issue:
+            increase ||
+            (currentQuote && currentQuote.priceFen > original.priceFen)
+              ? '模拟配送费已变化，请取消后重新结算；原成交金额不会自动修改'
+              : '',
         },
       });
       await tx.orderEvent.create({
@@ -363,7 +377,7 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
   ) {
     if (action === 'RECOVER_CANCEL' && r.identity.role !== 'OWNER')
       throw new ForbiddenException('仅老板可终止制作中的异常订单');
-    return this.transaction(async (tx) => {
+    const outcome = await this.transaction(async (tx) => {
       const locked = await tx.$queryRaw<{ id: string }[]>(
         Prisma.sql`SELECT id FROM orders WHERE id = ${orderId}::uuid AND "merchantId" = ${r.scope.merchantId}::uuid AND "brandId" = ${r.scope.brandId}::uuid AND "storeId" = ${r.scope.storeId}::uuid FOR UPDATE`,
       );
@@ -390,7 +404,7 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
       }
       if (requestFingerprint(before) === requestFingerprint(after))
         return publicOrder(order);
-      if (['PAY', 'ACCEPT', 'DISPATCH'].includes(action)) {
+      if (action === 'PAY') {
         if (
           order.expiresAt <= new Date() &&
           ['PENDING_PAYMENT', 'AWAITING_ACCEPTANCE'].includes(order.orderStatus)
@@ -422,6 +436,38 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
           );
         if (action === 'PAY' && current.settings?.autoAccept)
           after = transitionOrder(after, 'ACCEPT');
+      }
+      if (['ACCEPT', 'DISPATCH'].includes(action)) {
+        if (action === 'ACCEPT' && order.expiresAt <= new Date())
+          throw new ConflictException('订单已超时，请取消后重新下单');
+        const own = Object.fromEntries(
+          order.items
+            .filter((i) => i.finiteStock)
+            .map((i) => [i.variantId, i.quantity]),
+        );
+        const problem = await fulfillmentProblem(tx, r.scope, order, own);
+        if (problem) {
+          // Commit the actionable problem without changing state, money or inventory.
+          if (order.issue !== problem) {
+            await tx.order.update({
+              where: { id: orderId },
+              data: { issue: problem, version: { increment: 1 } },
+            });
+            await tx.orderEvent.create({
+              data: {
+                ...r.scope,
+                orderId,
+                actor: r.identity.id,
+                idempotencyKey: 'blocked-' + order.version,
+                requestHash: hash,
+                action: 'FULFILLMENT_BLOCKED',
+                before: {},
+                after: { reason: problem },
+              },
+            });
+          }
+          return { blocked: problem };
+        }
       }
       if (action === 'EXPIRE' && order.expiresAt > new Date())
         throw new ConflictException('订单尚未超时');
@@ -463,5 +509,7 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
       });
       return publicOrder(updated);
     });
+    if ('blocked' in outcome) throw new ConflictException(outcome.blocked);
+    return outcome;
   }
 }
