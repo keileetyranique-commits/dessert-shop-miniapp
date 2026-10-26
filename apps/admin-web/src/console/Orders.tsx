@@ -15,6 +15,7 @@ import {
 } from 'antd';
 import { fen, formatFen } from '@platform/shared';
 import { useCatalog } from './Data';
+import { useSession } from './Session';
 
 export interface OrderView {
   id: string;
@@ -74,6 +75,8 @@ export const actionLabels: Record<string, string> = {
   RECOVER_CANCEL: '异常终止并模拟退款',
   REQUOTED: '重新获取配送报价',
   QUOTE_CHANGED: '模拟配送报价变化',
+  RENEW_QUOTE: '重新询价',
+  FULFILLMENT_BLOCKED: '履约风险待老板处理',
 };
 export function orderActions(order: OrderView) {
   if (order.orderStatus === 'PENDING_PAYMENT') return ['PAY', 'CANCEL'];
@@ -97,6 +100,7 @@ const time = (value: string) =>
 
 export function Orders() {
   const { api, canEdit } = useCatalog();
+  const owner = useSession().identity.role === 'OWNER';
   const [orders, setOrders] = useState<OrderView[]>([]),
     [total, setTotal] = useState(0),
     [page, setPage] = useState(1);
@@ -171,9 +175,12 @@ export function Orders() {
     setNotice('');
     try {
       const updated = await api<OrderView>(
-        `/orders/${order.id}/actions`,
+        `/orders/${order.id}/${action === 'RENEW_QUOTE' ? 'requote' : 'actions'}`,
         'POST',
-        { action, idempotencyKey: keys.current.get(key) },
+        {
+          ...(action === 'RENEW_QUOTE' ? {} : { action }),
+          idempotencyKey: keys.current.get(key),
+        },
       );
       keys.current.delete(key);
       setNotice(`${actionLabels[action]}已完成`);
@@ -186,10 +193,13 @@ export function Orders() {
     }
   }
   function confirm(order: OrderView, action: string) {
-    if (['CANCEL', 'REJECT'].includes(action))
+    if (['CANCEL', 'REJECT', 'RECOVER_CANCEL', 'RENEW_QUOTE'].includes(action))
       Modal.confirm({
         title: `确认${actionLabels[action]}？`,
-        content: '会关闭测试订单、释放预占库存；已模拟付款将模拟退款。',
+        content:
+          action === 'RENEW_QUOTE'
+            ? '重新确认当前配送费用，不会降低已上涨的报价，也不会修改顾客成交金额。超预算时仍需处理或终止退款。'
+            : `${order.issue || '请先确认订单已无法继续履约。'} 会关闭测试订单、释放预占库存；已模拟付款将模拟退款。`,
         okText: '确认操作',
         cancelText: '返回',
         onOk: () => act(order, action),
@@ -335,7 +345,21 @@ export function Orders() {
               key: 'actions',
               render: (_, row) => (
                 <Space wrap>
-                  {orderActions(row).map((action) => (
+                  {[
+                    ...orderActions(row),
+                    ...(owner &&
+                    ['AWAITING_ACCEPTANCE', 'PREPARING', 'READY'].includes(
+                      row.orderStatus,
+                    ) &&
+                    row.mode === 'DELIVERY' &&
+                    row.fulfillmentStatus !== 'DISPATCHING'
+                      ? ['RENEW_QUOTE']
+                      : []),
+                    ...(owner &&
+                    ['PREPARING', 'READY'].includes(row.orderStatus)
+                      ? ['RECOVER_CANCEL']
+                      : []),
+                  ].map((action) => (
                     <Button
                       key={action}
                       loading={busy === row.id}
