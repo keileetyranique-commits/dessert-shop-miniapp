@@ -43,19 +43,20 @@
 
 所有新接口带 `/api/v1/admin` 前缀，使用 Bearer 和 X-Store-Id，同时验证非生产、服务端测试开关、角色和 Merchant→Brand→Store。生产/TEST_MODE=false 逐接口拒绝；生产误开测试模式直接启动失败。
 
-| 接口                                   | 用途                            |
-| -------------------------------------- | ------------------------------- |
-| GET /orders/menu                       | 可售规格和启用选项，不含成本    |
-| GET /orders/packaging                  | 本店整单包装名称/编号，不含成本 |
-| GET/PUT /orders/settings               | 查看/老板确认结算配置           |
-| POST /orders/preview                   | 2 分钟有效的结算预览            |
-| POST /orders                           | 幂等创建并预占，显式补差确认    |
-| GET /orders、/orders/:id               | 分页列表、详情和事件            |
-| POST /orders/:id/actions               | 合法状态迁移                    |
-| POST /order-test/quotes                | 15 分钟有效模拟配送报价         |
-| POST /order-test/quotes/:id/invalidate | 本人本店报价失效                |
-| POST /order-test/orders/:id/requote    | 幂等上涨/重新询价               |
-| POST /order-test/orders/:id/timeout    | 超时关闭和库存补偿              |
+| 接口                                   | 用途                             |
+| -------------------------------------- | -------------------------------- |
+| GET /orders/menu                       | 可售规格和启用选项，不含成本     |
+| GET /orders/packaging                  | 本店整单包装名称/编号，不含成本  |
+| GET/PUT /orders/settings               | 查看/老板确认结算配置            |
+| POST /orders/preview                   | 2 分钟有效的结算预览             |
+| POST /orders                           | 幂等创建并预占，显式补差确认     |
+| GET /orders、/orders/:id               | 分页列表、详情和事件             |
+| POST /orders/:id/actions               | 合法状态迁移                     |
+| POST /orders/:id/requote               | 老板确认续配送报价，保留上涨费用 |
+| POST /order-test/quotes                | 15 分钟有效模拟配送报价          |
+| POST /order-test/quotes/:id/invalidate | 本人本店报价失效                 |
+| POST /order-test/orders/:id/requote    | 幂等上涨/重新询价                |
+| POST /order-test/orders/:id/timeout    | 超时关闭和库存补偿               |
 
 ## 迁移与验证
 
@@ -63,6 +64,18 @@
 - 202610250002_order_delivery_recovery：订单运行时报价引用及门店复合外键。
 - 未修改已落地旧迁移；在隔离 PostgreSQL 连续 deploy 两次成功。
 - 本地 lint/format/typecheck/test/build、集成测试、Compose 健康检查及 smoke 已执行。真实浏览器步骤和截图见 [PHASE-3-ACCEPTANCE.md](PHASE-3-ACCEPTANCE.md)。远程 CI 以 Draft PR 最新 checks/compose 结果为准。
+
+## PR #26 复审修复（2026-10-26）
+
+付款前仍严格比较当前结算指纹、报价时效和应付金额。付款后接单/发配送以不可变成交金额、费用约定及原利润规则为依据，当前商品改价或新规则不会回溯修改合同；同时读取当前成本与可用性，资料缺失、成本超过原预算、配送费上涨均阻断并持久化中文异常和事件。待接单本身的超时关闭规则保留。
+
+原配送报价自然到期时，老板可在正常订单页或 POS 点击“重新询价”，确认后调用 POST `/orders/:id/requote`。它续当前模拟报价的有效期，保留已上涨的报价，不暗中调低费用；同价且成本安全可继续。超预算时不提供强制放行，只能补齐/核对资料恢复至安全条件，或由老板明确确认终止模拟退款，再重新下单。没有实现真实承运商协商或追加扣款。
+
+两端复用同一 Orders 组件，OWNER 才显示询价与制作/待配送异常退款按钮，MANAGER 无这些敏感入口，后端再次校验。已支付待接单可使用已有拒单退款。操作说明与二次确认均使用中文，金额不变、库存补偿及重复执行沿用原事务与幂等保护。没有新增第三方依赖。
+
+新增迁移 `202610260001_order_history_delete_protection`：对 orders、order_items、order_events 的 DELETE 增加拒绝触发器，保留原 UPDATE 不可变保护，合法状态字段仍能更新。不提供应用可开启的绕过参数或删除接口。数据库管理员本身可以修改触发器/结构，不宣称抵御 DBA 权限；未来归档须另行审批。测试仅在隔离 test 数据库使用 DBA 事务级权限清理随机测试租户，应用不调用该清理路径。
+
+回归覆盖 16 分钟以上过期、付款后改价/改规则、同价续期、上涨续期不降价、缺成本/成本上涨阻断、重复阻断不重复记日志、恢复及退款幂等、跨店/角色/生产与测试开关、历史 UPDATE/DELETE 失败、合法状态迁移和前端二次确认。复审 CI 见 PR 最新链接。
 
 ## 明确限制
 
