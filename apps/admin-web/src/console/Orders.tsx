@@ -77,6 +77,7 @@ export const actionLabels: Record<string, string> = {
   QUOTE_CHANGED: '模拟配送报价变化',
   RENEW_QUOTE: '重新询价',
   FULFILLMENT_BLOCKED: '履约风险待老板处理',
+  RESERVATION_BLOCKED: '库存预占异常，待老板核对',
 };
 export function orderActions(order: OrderView) {
   if (order.orderStatus === 'PENDING_PAYMENT') return ['PAY', 'CANCEL'];
