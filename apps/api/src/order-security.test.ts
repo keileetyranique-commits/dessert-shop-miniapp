@@ -44,6 +44,10 @@ test('顾客结算请求不能传入价格、成本、权限或订单状态', ()
     ],
   };
   assert.equal(checkoutInput.safeParse(input).success, true);
+  assert.equal(
+    checkoutInput.safeParse({ ...input, purpose: 'PAID_FULFILLMENT' }).success,
+    false,
+  );
   for (const field of [
     'salePriceFen',
     'variableCostFen',

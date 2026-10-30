@@ -11,6 +11,8 @@ export async function fulfillmentProblem(
   order: Order,
   own: Record<string, number>,
 ) {
+  const eligibility = await fulfillmentEligibility(tx, scope, order);
+  if (eligibility) return eligibility;
   const evidence = z
     .object({
       pricing: z.object({
@@ -48,7 +50,14 @@ export async function fulfillmentProblem(
     };
   }
   try {
-    const current = await readPricing(tx, scope, request, now, own);
+    const current = await readPricing(
+      tx,
+      scope,
+      request,
+      now,
+      own,
+      'PAID_FULFILLMENT',
+    );
     const original = evidence.pricing.input;
     if (
       current.evidence.input.missingInputs.length ||
@@ -80,4 +89,52 @@ export async function fulfillmentProblem(
   } catch {
     return '履约资料不完整或商品不可用，请老板核对或终止模拟退款';
   }
+}
+
+/** Sales switches do not revoke a paid contract. Reservations and safety still do. */
+export async function fulfillmentEligibility(
+  tx: Prisma.TransactionClient,
+  scope: TenantScope,
+  order: Order,
+) {
+  const invalid = '库存预占异常，请联系老板核对';
+  if (
+    order.paymentStatus !== 'PAID' ||
+    order.reservationStatus !== 'HELD' ||
+    order.merchantId !== scope.merchantId ||
+    order.brandId !== scope.brandId ||
+    order.storeId !== scope.storeId
+  )
+    return invalid;
+  const items = await tx.orderItem.findMany({
+    where: { ...scope, orderId: order.id },
+    include: { variant: { include: { product: true } } },
+  });
+  if (!items.length) return invalid;
+  for (const item of items) {
+    const v = item.variant;
+    if (v.deletedAt || v.product.deletedAt)
+      return '履约商品已归档，请老板核对或终止模拟退款';
+    if (v.product.safetyHoldReason.trim())
+      return '商品因安全原因暂停履约，请老板核对或终止模拟退款';
+    if (item.finiteStock) {
+      const held = await tx.orderItem.aggregate({
+        where: {
+          ...scope,
+          variantId: v.id,
+          finiteStock: true,
+          order: { reservationStatus: 'HELD' },
+        },
+        _sum: { quantity: true },
+      });
+      const total = held._sum.quantity ?? 0;
+      if (
+        total < item.quantity ||
+        v.reservedQuantity < total ||
+        v.stockQuantity < v.reservedQuantity
+      )
+        return invalid;
+    }
+  }
+  return null;
 }

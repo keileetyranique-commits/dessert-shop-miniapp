@@ -108,7 +108,12 @@ export class OrdersController {
   }
   @Get('menu') async menu(@Req() r: AdminRequest) {
     return this.db.product.findMany({
-      where: { ...r.scope, deletedAt: null, status: 'ACTIVE' },
+      where: {
+        ...r.scope,
+        deletedAt: null,
+        status: 'ACTIVE',
+        safetyHoldReason: '',
+      },
       orderBy: { name: 'asc' },
       take: 200,
       select: {

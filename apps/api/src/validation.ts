@@ -50,6 +50,7 @@ export const categoryInput = z
 export const productInput = z
   .object({
     name,
+    safetyHoldReason: z.string().trim().max(500).default(''),
     categoryId: id,
     description: z.string().max(4000).default(''),
     imageUrl: z

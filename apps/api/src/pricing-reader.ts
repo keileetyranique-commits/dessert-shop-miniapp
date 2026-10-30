@@ -18,6 +18,7 @@ export async function readPricing(
   request: z.input<typeof pricingRequest>,
   now = new Date(),
   ownReservations: Readonly<Record<string, number>> = {},
+  purpose: 'NEW_SALE' | 'PAID_FULFILLMENT' = 'NEW_SALE',
 ) {
   if (
     new Set(request.items.map((i) => i.variantId)).size !== request.items.length
@@ -38,7 +39,8 @@ export async function readPricing(
   const missingInputs: string[] = [],
     blockedReasons: string[] = [];
   if (!rule) missingInputs.push('请老板先保存利润保护设置');
-  if (store.status !== 'ACTIVE') blockedReasons.push('门店已停用');
+  if (purpose === 'NEW_SALE' && store.status !== 'ACTIVE')
+    blockedReasons.push('门店已停用');
   const totalQuantity = request.items.reduce((a, i) => a + i.quantity, 0);
   let goods = 0n,
     variable = 0n,
@@ -61,11 +63,14 @@ export async function readPricing(
     if (variant.deletedAt || variant.product.deletedAt)
       throw new BadRequestException('商品或规格已归档，请重新选择');
     if (
-      variant.status !== 'ACTIVE' ||
-      variant.product.status !== 'ACTIVE' ||
-      variant.soldOut
+      purpose === 'NEW_SALE' &&
+      (variant.status !== 'ACTIVE' ||
+        variant.product.status !== 'ACTIVE' ||
+        variant.soldOut)
     )
       blockedReasons.push(`${variant.product.name}不可售`);
+    if (variant.product.safetyHoldReason.trim())
+      blockedReasons.push('商品因安全原因暂停履约，请老板核对或终止模拟退款');
     if (
       !variant.unlimitedStock &&
       variant.stockQuantity -

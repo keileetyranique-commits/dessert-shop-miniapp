@@ -326,6 +326,11 @@ test('订单存储：租户复合外键、幂等键、不可变快照与事务�
     });
     assert.equal(consumed.stockQuantity, 0);
     assert.equal(consumed.reservedQuantity, 0);
+    // This raw inventory fixture has been consumed; it is not an outstanding reservation.
+    await db.order.update({
+      where: { id: order.id },
+      data: { reservationStatus: 'CONSUMED' },
+    });
     await assert.rejects(
       db.$transaction((tx) =>
         reserveInventory(tx, other, [{ variantId: variant.id, quantity: 1 }]),
@@ -616,6 +621,165 @@ test('订单存储：租户复合外键、幂等键、不可变快照与事务�
       await db.variant.update({
         where: { id: variant.id },
         data: { salePriceFen: 1990 },
+      });
+    }
+    // Stopping new sales must not strand paid, reserved orders.
+    for (const stop of ['soldOut', 'variant', 'product', 'store'] as const) {
+      const stockBefore = await db.variant.findUniqueOrThrow({
+        where: { id: variant.id },
+      });
+      await db.variant.update({
+        where: { id: variant.id },
+        data: { stockQuantity: 20 },
+      });
+      const q = await db.mockDeliveryQuote.create({
+        data: {
+          ...scope,
+          actor: caller.identity.id,
+          priceFen: 600,
+          distanceMeters: 3000,
+          expiresAt: new Date(Date.now() + 900000),
+        },
+      });
+      const request = {
+        ...checkout,
+        fulfillment: 'DELIVERY' as const,
+        quoteId: q.id,
+      };
+      const make = async () => {
+        const p = await service.preview(caller, request);
+        return service.create(caller, {
+          previewId: p.previewId,
+          idempotencyKey: randomUUID(),
+          acceptTopup: false,
+        });
+      };
+      const paid = await make(),
+        unpaid = await make();
+      await service.action(caller, paid.id, 'PAY', randomUUID());
+      const stale = await service.preview(caller, request);
+      if (stop === 'store')
+        await db.store.update({
+          where: { id: scope.storeId },
+          data: { status: 'INACTIVE' },
+        });
+      else if (stop === 'product')
+        await db.product.update({
+          where: { id: product.id },
+          data: { status: 'INACTIVE' },
+        });
+      else
+        await db.variant.update({
+          where: { id: variant.id },
+          data: stop === 'soldOut' ? { soldOut: true } : { status: 'INACTIVE' },
+        });
+      assert.notEqual(
+        (await service.preview(caller, request)).decision,
+        'PASS',
+      );
+      await assert.rejects(
+        service.create(caller, {
+          previewId: stale.previewId,
+          idempotencyKey: randomUUID(),
+          acceptTopup: false,
+        }),
+      );
+      await assert.rejects(
+        service.action(caller, unpaid.id, 'PAY', randomUUID()),
+      );
+      // Inventory and explicit safety holds remain hard barriers despite the sales-only bypass.
+      await db.variant.update({
+        where: { id: variant.id },
+        data: { reservedQuantity: 1 },
+      });
+      await assert.rejects(
+        service.action(caller, paid.id, 'ACCEPT', randomUUID()),
+        /预占异常/,
+      );
+      await db.variant.update({
+        where: { id: variant.id },
+        data: { reservedQuantity: 2 },
+      });
+      await db.product.update({
+        where: { id: product.id },
+        data: { safetyHoldReason: '食品安全召回测试' },
+      });
+      await assert.rejects(
+        service.action(caller, paid.id, 'ACCEPT', randomUUID()),
+        /安全原因/,
+      );
+      await db.product.update({
+        where: { id: product.id },
+        data: { safetyHoldReason: '' },
+      });
+      await db.variant.update({
+        where: { id: variant.id },
+        data: { deletedAt: new Date() },
+      });
+      await assert.rejects(
+        service.action(caller, paid.id, 'ACCEPT', randomUUID()),
+        /已归档/,
+      );
+      await db.variant.update({
+        where: { id: variant.id },
+        data: { deletedAt: null },
+      });
+      for (const action of [
+        'ACCEPT',
+        'READY',
+        'DISPATCH',
+        'DRIVER_ACCEPT',
+        'DELIVERED',
+      ] as const) {
+        if (action !== 'ACCEPT') {
+          await db.product.update({
+            where: { id: product.id },
+            data: { safetyHoldReason: '安全复核' },
+          });
+          await assert.rejects(
+            service.action(caller, paid.id, action, randomUUID()),
+            /安全原因/,
+          );
+          await db.product.update({
+            where: { id: product.id },
+            data: { safetyHoldReason: '' },
+          });
+        }
+        await service.action(caller, paid.id, action, randomUUID());
+      }
+      await service.action(caller, paid.id, 'DELIVERED', randomUUID());
+      const completed = await db.order.findUniqueOrThrow({
+        where: { id: paid.id },
+      });
+      assert.equal(completed.orderStatus, 'COMPLETED');
+      assert.equal(completed.payableFen, paid.payableFen);
+      assert.deepEqual(completed.snapshot, paid.snapshot);
+      assert.equal(
+        (await db.variant.findUniqueOrThrow({ where: { id: variant.id } }))
+          .stockQuantity,
+        19,
+      );
+      await service.action(caller, unpaid.id, 'CANCEL', randomUUID());
+      assert.equal(
+        (await db.variant.findUniqueOrThrow({ where: { id: variant.id } }))
+          .reservedQuantity,
+        0,
+      );
+      await db.store.update({
+        where: { id: scope.storeId },
+        data: { status: 'ACTIVE' },
+      });
+      await db.product.update({
+        where: { id: product.id },
+        data: { status: 'ACTIVE' },
+      });
+      await db.variant.update({
+        where: { id: variant.id },
+        data: {
+          status: 'ACTIVE',
+          soldOut: false,
+          stockQuantity: stockBefore.stockQuantity,
+        },
       });
     }
     const dinePreview = await service.preview(caller, {
@@ -975,6 +1139,40 @@ test('订单存储：租户复合外键、幂等键、不可变快照与事务�
         );
       }
       if (testMode) {
+        for (const [role, store] of [
+          [2, scope.storeId],
+          [0, other.storeId],
+        ] as const) {
+          const denied = await call(
+            `/products/${product.id}`,
+            'PATCH',
+            { safetyHoldReason: '安全暂停' },
+            role,
+            store,
+          );
+          assert.ok(denied.status >= 400);
+        }
+        assert.equal(
+          (
+            await call(`/products/${product.id}`, 'PATCH', {
+              safetyHoldReason: '安全暂停',
+            })
+          ).status,
+          200,
+        );
+        assert.equal(
+          (await db.product.findUniqueOrThrow({ where: { id: product.id } }))
+            .safetyHoldReason,
+          '安全暂停',
+        );
+        assert.equal(
+          (
+            await call(`/products/${product.id}`, 'PATCH', {
+              safetyHoldReason: '',
+            })
+          ).status,
+          200,
+        );
         assert.equal(
           (
             await call(

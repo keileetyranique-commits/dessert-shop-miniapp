@@ -251,6 +251,7 @@ model Product {
   createdAt            DateTime        @default(now()) @db.Timestamptz(3)
   name                 String
   description          String          @default("")
+  safetyHoldReason     String          @default("")
   imageUrl             String          @default("")
   status               String          @default("ACTIVE")
   categoryId           String          @db.Uuid

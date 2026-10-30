@@ -21,7 +21,10 @@ import type { AdminRequest } from './auth.js';
 import { checkoutInput, requestFingerprint } from './order-security.js';
 import { readCheckout, jsonValue } from './checkout-reader.js';
 import { reserveInventory, settleInventory } from './order-inventory.js';
-import { fulfillmentProblem } from './order-fulfillment.js';
+import {
+  fulfillmentProblem,
+  fulfillmentEligibility,
+} from './order-fulfillment.js';
 
 const savedRequest = z
   .object({ checkout: checkoutInput, acceptTopup: z.boolean() })
@@ -437,7 +440,16 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
         if (action === 'PAY' && current.settings?.autoAccept)
           after = transitionOrder(after, 'ACCEPT');
       }
-      if (['ACCEPT', 'DISPATCH'].includes(action)) {
+      if (
+        [
+          'ACCEPT',
+          'READY',
+          'DISPATCH',
+          'DRIVER_ACCEPT',
+          'DELIVERED',
+          'PICKUP',
+        ].includes(action)
+      ) {
         if (action === 'ACCEPT' && order.expiresAt <= new Date())
           throw new ConflictException('订单已超时，请取消后重新下单');
         const own = Object.fromEntries(
@@ -445,7 +457,9 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
             .filter((i) => i.finiteStock)
             .map((i) => [i.variantId, i.quantity]),
         );
-        const problem = await fulfillmentProblem(tx, r.scope, order, own);
+        const problem = ['ACCEPT', 'DISPATCH'].includes(action)
+          ? await fulfillmentProblem(tx, r.scope, order, own)
+          : await fulfillmentEligibility(tx, r.scope, order);
         if (problem) {
           // Commit the actionable problem without changing state, money or inventory.
           if (order.issue !== problem) {
