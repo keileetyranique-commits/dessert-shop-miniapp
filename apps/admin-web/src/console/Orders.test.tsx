@@ -94,6 +94,21 @@ test('网络失败保留明确错误，不伪装空列表', async () => {
   ).toBeTruthy();
 });
 
+test('安全暂停保留订单并显示处理提示，不误报接单成功', async () => {
+  const base = api.getMockImplementation()!;
+  const message = '商品因安全原因暂停履约，请老板核对或终止模拟退款';
+  api.mockImplementation(async (path: string, method?: string) => {
+    if (method === 'POST') throw new Error(message);
+    return base(path);
+  });
+  render(<Orders />);
+  await screen.findByText('真实商品 × 1');
+  fireEvent.click(screen.getByRole('button', { name: '接单制作' }));
+  expect(await screen.findByText(message)).toBeTruthy();
+  expect(screen.getByText('真实商品 × 1')).toBeTruthy();
+  expect(screen.queryByText('接单制作已完成')).toBeNull();
+});
+
 test.each([
   ['OWNER', 'RENEW_QUOTE'],
   ['OWNER', 'RECOVER_CANCEL'],

@@ -2,6 +2,26 @@ import { afterEach, expect, test, vi } from 'vitest';
 import { createClient, AdminRequestError } from './admin-client';
 afterEach(() => vi.unstubAllGlobals());
 
+test.each([
+  '库存预占异常，请联系老板核对',
+  '商品因安全原因暂停履约，请老板核对或终止模拟退款',
+  '履约商品已归档，请老板核对或终止模拟退款',
+])('履约风险向订单页和 POS 返回明确中文：%s', async (message) => {
+  vi.stubGlobal(
+    'fetch',
+    vi
+      .fn()
+      .mockResolvedValue(
+        new Response(JSON.stringify({ message }), { status: 409 }),
+      ),
+  );
+  await expect(
+    createClient('test-only')('/orders/id/actions', 'POST', {
+      action: 'ACCEPT',
+    }),
+  ).rejects.toThrow(message);
+});
+
 test('订单错误仅展示公开白名单，未知服务端内容不泄露', async () => {
   const fetch = vi
     .fn()
