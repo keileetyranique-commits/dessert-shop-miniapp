@@ -426,6 +426,127 @@ test('订单存储：租户复合外键、幂等键、不可变快照与事务�
         storeIds: [scope.storeId],
       },
     };
+    for (const autoAccept of [false, true]) {
+      await db.orderSettings.update({
+        where: { storeId: scope.storeId },
+        data: { autoAccept },
+      });
+      const makePending = async () => {
+        const p = await service.preview(caller, checkout);
+        return service.create(caller, {
+          previewId: p.previewId,
+          idempotencyKey: randomUUID(),
+          acceptTopup: false,
+        });
+      };
+      for (const damaged of [0, 1, 3]) {
+        const a = await makePending(),
+          b = await makePending();
+        await db.variant.update({
+          where: { id: variant.id },
+          data: { reservedQuantity: damaged },
+        });
+        const beforeStock = await db.variant.findUniqueOrThrow({
+          where: { id: variant.id },
+        });
+        const payments = await Promise.allSettled([
+          service.action(caller, a.id, 'PAY', 'broken-pay'),
+          service.action(caller, a.id, 'PAY', 'broken-pay'),
+          service.action(caller, b.id, 'PAY', 'other-pay'),
+        ]);
+        assert.ok(payments.every((p) => p.status === 'rejected'));
+        for (const pending of [a, b]) {
+          const current = await db.order.findUniqueOrThrow({
+            where: { id: pending.id },
+          });
+          assert.equal(current.paymentStatus, 'UNPAID');
+          assert.equal(current.orderStatus, 'PENDING_PAYMENT');
+          assert.equal(current.reservationStatus, 'HELD');
+          assert.match(current.issue, /预占异常/);
+          assert.equal(
+            await db.orderEvent.count({
+              where: { orderId: pending.id, action: 'PAY' },
+            }),
+            0,
+          );
+          assert.equal(
+            await db.orderEvent.count({
+              where: { orderId: pending.id, action: 'RESERVATION_BLOCKED' },
+            }),
+            1,
+          );
+        }
+        await assert.rejects(
+          service.action(caller, a.id, 'CANCEL', 'cancel-damaged'),
+          /预占异常/,
+        );
+        assert.deepEqual(
+          await db.variant.findUniqueOrThrow({ where: { id: variant.id } }),
+          beforeStock,
+        );
+        // Explicit privileged test repair after reconciliation; application never guesses a release amount.
+        await db.variant.update({
+          where: { id: variant.id },
+          data: { reservedQuantity: 2 },
+        });
+        await service.action(caller, a.id, 'CANCEL', 'cancel-damaged');
+        await service.action(caller, a.id, 'CANCEL', 'cancel-damaged');
+        assert.equal(
+          (await db.variant.findUniqueOrThrow({ where: { id: variant.id } }))
+            .reservedQuantity,
+          1,
+        );
+        await service.action(caller, b.id, 'CANCEL', randomUUID());
+      }
+      for (const unlimitedStock of [false, true]) {
+        await db.variant.update({
+          where: { id: variant.id },
+          data: { unlimitedStock },
+        });
+        const normal = await makePending();
+        const results = await Promise.all([
+          service.action(caller, normal.id, 'PAY', 'same-pay'),
+          service.action(caller, normal.id, 'PAY', 'same-pay'),
+          service.action(caller, normal.id, 'PAY', 'another-pay'),
+          db.variant.update({
+            where: { id: variant.id },
+            data: { stockQuantity: { increment: 1 } },
+          }),
+        ]);
+        assert.equal(results[0].paymentStatus, 'PAID');
+        assert.equal(
+          results[0].orderStatus,
+          autoAccept ? 'PREPARING' : 'AWAITING_ACCEPTANCE',
+        );
+        assert.equal(
+          await db.orderEvent.count({
+            where: { orderId: normal.id, action: 'PAY' },
+          }),
+          1,
+        );
+        const stock = await db.variant.findUniqueOrThrow({
+          where: { id: variant.id },
+        });
+        assert.equal(stock.stockQuantity, 4);
+        assert.equal(stock.reservedQuantity, unlimitedStock ? 0 : 1);
+        const cancel = autoAccept ? 'RECOVER_CANCEL' : 'REJECT';
+        await service.action(caller, normal.id, cancel, 'release-once');
+        await service.action(caller, normal.id, cancel, 'release-once');
+        assert.equal(
+          (await db.variant.findUniqueOrThrow({ where: { id: variant.id } }))
+            .reservedQuantity,
+          0,
+        );
+        await db.variant.update({
+          where: { id: variant.id },
+          data: { stockQuantity: 3, unlimitedStock: false },
+        });
+      }
+    }
+    await db.orderSettings.update({
+      where: { storeId: scope.storeId },
+      data: { autoAccept: false },
+    });
     const readyPreview = await service.preview(caller, checkout);
     assert.equal(readyPreview.decision, 'PASS');
     const createInput = {

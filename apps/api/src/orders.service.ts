@@ -20,7 +20,11 @@ import { CONFIG, type AppConfig } from './config.js';
 import type { AdminRequest } from './auth.js';
 import { checkoutInput, requestFingerprint } from './order-security.js';
 import { readCheckout, jsonValue } from './checkout-reader.js';
-import { reserveInventory, settleInventory } from './order-inventory.js';
+import {
+  reserveInventory,
+  settleInventory,
+  reservationProblem,
+} from './order-inventory.js';
 import {
   fulfillmentProblem,
   fulfillmentEligibility,
@@ -407,6 +411,51 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
       }
       if (requestFingerprint(before) === requestFingerprint(after))
         return publicOrder(order);
+      if (action === 'PAY' || after.reservation !== 'HELD') {
+        const problem = await reservationProblem(tx, r.scope, order.id);
+        if (problem) {
+          if (order.issue !== problem) {
+            await tx.order.update({
+              where: { id: order.id },
+              data: { issue: problem, version: { increment: 1 } },
+            });
+            await tx.orderEvent.create({
+              data: {
+                ...r.scope,
+                orderId,
+                actor: r.identity.id,
+                idempotencyKey: 'reservation-blocked-' + order.version,
+                requestHash: hash,
+                action: 'RESERVATION_BLOCKED',
+                before: jsonValue(before),
+                after: jsonValue({
+                  reason: problem,
+                  attemptedAction: action,
+                  reservations: order.items.map(
+                    ({ variantId, quantity, finiteStock }) => ({
+                      variantId,
+                      quantity,
+                      finiteStock,
+                    }),
+                  ),
+                  inventory: await tx.variant.findMany({
+                    where: {
+                      ...r.scope,
+                      id: { in: order.items.map((i) => i.variantId) },
+                    },
+                    select: {
+                      id: true,
+                      stockQuantity: true,
+                      reservedQuantity: true,
+                    },
+                  }),
+                }),
+              },
+            });
+          }
+          return { blocked: problem };
+        }
+      }
       if (action === 'PAY') {
         if (
           order.expiresAt <= new Date() &&

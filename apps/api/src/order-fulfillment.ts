@@ -3,6 +3,7 @@ import { simulatePricing, type TenantScope } from '@platform/shared';
 import { z } from 'zod';
 import { pricingRequest, pricingRule } from './pricing.validation.js';
 import { readPricing } from './pricing-reader.js';
+import { reservationProblem } from './order-inventory.js';
 
 /** Paid contracts keep their prices/rules; current costs may never silently exceed their budget. */
 export async function fulfillmentProblem(
@@ -111,30 +112,14 @@ export async function fulfillmentEligibility(
     include: { variant: { include: { product: true } } },
   });
   if (!items.length) return invalid;
+  const reservation = await reservationProblem(tx, scope, order.id);
+  if (reservation) return reservation;
   for (const item of items) {
     const v = item.variant;
     if (v.deletedAt || v.product.deletedAt)
       return '履约商品已归档，请老板核对或终止模拟退款';
     if (v.product.safetyHoldReason.trim())
       return '商品因安全原因暂停履约，请老板核对或终止模拟退款';
-    if (item.finiteStock) {
-      const held = await tx.orderItem.aggregate({
-        where: {
-          ...scope,
-          variantId: v.id,
-          finiteStock: true,
-          order: { reservationStatus: 'HELD' },
-        },
-        _sum: { quantity: true },
-      });
-      const total = held._sum.quantity ?? 0;
-      if (
-        total < item.quantity ||
-        v.reservedQuantity < total ||
-        v.stockQuantity < v.reservedQuantity
-      )
-        return invalid;
-    }
   }
   return null;
 }
