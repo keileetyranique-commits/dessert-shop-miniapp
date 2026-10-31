@@ -11,7 +11,7 @@ import type { DatabaseService } from './infrastructure.js';
 import type { AdminRequest } from './auth.js';
 import { createApp } from './app.js';
 
-test('订单存储：租户复合外键、幂等键、不可变快照与事务回滚', async () => {
+test('订单存储：租户复合外键、幂等键、不可变快照与事务回滚', async (t) => {
   const config = parseConfig(process.env);
   assert.equal(config.environment, 'test');
   assert.match(new URL(config.databaseUrl).pathname, /test/);
@@ -426,6 +426,235 @@ test('订单存储：租户复合外键、幂等键、不可变快照与事务�
         storeIds: [scope.storeId],
       },
     };
+    // Dedicated variants keep these boundary tests independent of earlier stock fixtures.
+    const boundaryProduct = await db.product.create({
+      data: { ...scope, categoryId: category.id, name: '边界验收商品' },
+    });
+    const boundaryVariants = [];
+    for (let i = 0; i < 3; i++) {
+      const v = await db.variant.create({
+        data: {
+          ...scope,
+          productId: i === 0 ? product.id : boundaryProduct.id,
+          name: `边界规格${i}`,
+          salePriceFen: 1880,
+          stockQuantity: 10,
+          unlimitedStock: i === 2,
+        },
+      });
+      await db.recipe.create({
+        data: {
+          ...scope,
+          variantId: v.id,
+          version: 1,
+          otherVariableCostFen: 300,
+        },
+      });
+      await db.packagingConfiguration.create({
+        data: { ...scope, variantId: v.id, fulfillment: 'PICKUP' },
+      });
+      boundaryVariants.push(v);
+    }
+    const [finite, second, infinite] = boundaryVariants;
+    assert.ok(finite && second && infinite);
+    const pending = async (ids: string[]) => {
+      const p = await service.preview(caller, {
+        fulfillment: 'PICKUP',
+        items: ids.map((variantId) => ({
+          variantId,
+          quantity: 2,
+          modifierIds: [],
+        })),
+      });
+      assert.equal(p.decision, 'PASS');
+      const o = await service.create(caller, {
+        previewId: p.previewId,
+        idempotencyKey: randomUUID(),
+        acceptTopup: false,
+      });
+      assert.equal(
+        await db.orderItem.count({ where: { orderId: o.id } }),
+        ids.length,
+      );
+      return o;
+    };
+    const stockIs = async (id: string, stock: number, reserved: number) => {
+      const v = await db.variant.findUniqueOrThrow({ where: { id } });
+      assert.equal(v.stockQuantity, stock);
+      assert.equal(v.reservedQuantity, reserved);
+      const ledger = await db.orderItem.aggregate({
+        where: {
+          ...scope,
+          variantId: id,
+          finiteStock: true,
+          order: { reservationStatus: 'HELD' },
+        },
+        _sum: { quantity: true },
+      });
+      assert.equal(ledger._sum.quantity ?? 0, reserved);
+    };
+    const events = (orderId: string, action: string) =>
+      db.orderEvent.count({ where: { orderId, action } });
+    const movements = (variantId: string) =>
+      db.inventoryMovement.findMany({ where: { ...scope, variantId } });
+    await t.test('同规格两订单库存充足时并发付款：自动及手动接单', async () => {
+      for (const autoAccept of [false, true]) {
+        await db.orderSettings.update({
+          where: { storeId: scope.storeId },
+          data: { autoAccept },
+        });
+        const a = await pending([finite.id]),
+          b = await pending([finite.id]);
+        await stockIs(finite.id, 10, 4);
+        await Promise.all([
+          service.action(caller, a.id, 'PAY', 'pay-a'),
+          service.action(caller, b.id, 'PAY', 'pay-b'),
+        ]);
+        for (const o of [a, b]) {
+          const saved = await db.order.findUniqueOrThrow({
+            where: { id: o.id },
+          });
+          assert.equal(saved.paymentStatus, 'PAID');
+          assert.equal(
+            saved.orderStatus,
+            autoAccept ? 'PREPARING' : 'AWAITING_ACCEPTANCE',
+          );
+          assert.equal(saved.reservationStatus, 'HELD');
+          assert.equal(await events(o.id, 'PAY'), 1);
+        }
+        await stockIs(finite.id, 10, 4);
+        assert.deepEqual(await movements(finite.id), []);
+        for (const o of [a, b])
+          await service.action(
+            caller,
+            o.id,
+            autoAccept ? 'RECOVER_CANCEL' : 'CANCEL',
+            'cleanup',
+          );
+        await stockIs(finite.id, 10, 0);
+      }
+    });
+    await t.test('付款与取消并发：合法结果及重试幂等', async () => {
+      await db.orderSettings.update({
+        where: { storeId: scope.storeId },
+        data: { autoAccept: false },
+      });
+      const o = await pending([finite.id]);
+      await stockIs(finite.id, 10, 2);
+      await Promise.all([
+        service.action(caller, o.id, 'PAY', 'race-pay'),
+        service.action(caller, o.id, 'CANCEL', 'race-cancel'),
+      ]);
+      const saved = await db.order.findUniqueOrThrow({ where: { id: o.id } });
+      assert.equal(saved.orderStatus, 'CANCELLED');
+      assert.equal(saved.reservationStatus, 'RELEASED');
+      const paid = await events(o.id, 'PAY');
+      assert.ok(paid === 0 || paid === 1);
+      assert.equal(saved.paymentStatus, paid ? 'REFUNDED' : 'UNPAID');
+      assert.equal(await events(o.id, 'CANCEL'), 1);
+      await Promise.all([
+        service.action(caller, o.id, 'PAY', 'race-pay'),
+        service.action(caller, o.id, 'CANCEL', 'race-cancel'),
+      ]);
+      assert.deepEqual(
+        await db.order.findUniqueOrThrow({ where: { id: o.id } }),
+        saved,
+      );
+      assert.equal(await events(o.id, 'PAY'), paid);
+      assert.equal(await events(o.id, 'CANCEL'), 1);
+      await stockIs(finite.id, 10, 0);
+      assert.deepEqual(await movements(finite.id), []);
+    });
+    await t.test('多商品多规格单项预占异常：整单拒绝及原键恢复', async () => {
+      const o = await pending([finite.id, second.id]);
+      await stockIs(finite.id, 10, 2);
+      await stockIs(second.id, 10, 2);
+      await db.variant.update({
+        where: { id: second.id },
+        data: { reservedQuantity: 1 },
+      });
+      const before = await db.variant.findMany({
+        where: { id: { in: [finite.id, second.id] } },
+        orderBy: { id: 'asc' },
+      });
+      for (const key of ['repair-pay', 'repair-pay'])
+        await assert.rejects(
+          service.action(caller, o.id, 'PAY', key),
+          /预占异常/,
+        );
+      const saved = await db.order.findUniqueOrThrow({ where: { id: o.id } });
+      assert.equal(saved.orderStatus, 'PENDING_PAYMENT');
+      assert.equal(saved.paymentStatus, 'UNPAID');
+      assert.equal(saved.reservationStatus, 'HELD');
+      assert.deepEqual(
+        await db.variant.findMany({
+          where: { id: { in: [finite.id, second.id] } },
+          orderBy: { id: 'asc' },
+        }),
+        before,
+      );
+      assert.equal(await events(o.id, 'PAY'), 0);
+      assert.equal(await events(o.id, 'RESERVATION_BLOCKED'), 1);
+      assert.equal(
+        await db.orderItem.count({
+          where: { orderId: o.id, quantity: 2, finiteStock: true },
+        }),
+        2,
+      );
+      // Existing failure semantics preserve ALL original ledger entries; never partially release.
+      await assert.rejects(
+        service.action(caller, o.id, 'CANCEL', 'broken-cancel'),
+        /预占异常/,
+      );
+      for (const v of [finite, second])
+        assert.deepEqual(await movements(v.id), []);
+      // Privileged isolated test fixture repair, not an application repair bypass.
+      await db.variant.update({
+        where: { id: second.id },
+        data: { reservedQuantity: 2 },
+      });
+      await Promise.all([
+        service.action(caller, o.id, 'PAY', 'repair-pay'),
+        service.action(caller, o.id, 'PAY', 'repair-pay'),
+      ]);
+      assert.equal(await events(o.id, 'PAY'), 1);
+      assert.equal(
+        (await db.order.findUniqueOrThrow({ where: { id: o.id } })).orderStatus,
+        'AWAITING_ACCEPTANCE',
+      );
+      for (const v of [finite, second]) await stockIs(v.id, 10, 2);
+      await service.action(caller, o.id, 'CANCEL', 'broken-cancel');
+      await service.action(caller, o.id, 'CANCEL', 'broken-cancel');
+      assert.equal(await events(o.id, 'CANCEL'), 1);
+      for (const v of [finite, second]) {
+        await stockIs(v.id, 10, 0);
+        assert.deepEqual(await movements(v.id), []);
+      }
+    });
+    await t.test('有限与无限库存混合订单完整履约及重复完成', async () => {
+      const o = await pending([finite.id, infinite.id]);
+      await stockIs(finite.id, 10, 2);
+      await stockIs(infinite.id, 10, 0);
+      for (const action of ['PAY', 'ACCEPT', 'READY'] as const)
+        await service.action(caller, o.id, action, action);
+      await Promise.all([
+        service.action(caller, o.id, 'PICKUP', 'complete'),
+        service.action(caller, o.id, 'PICKUP', 'complete'),
+      ]);
+      await service.action(caller, o.id, 'PICKUP', 'complete-again');
+      const saved = await db.order.findUniqueOrThrow({ where: { id: o.id } });
+      assert.equal(saved.orderStatus, 'COMPLETED');
+      assert.equal(saved.paymentStatus, 'PAID');
+      assert.equal(saved.reservationStatus, 'CONSUMED');
+      await stockIs(finite.id, 8, 0);
+      await stockIs(infinite.id, 10, 0);
+      const rows = await movements(finite.id);
+      assert.equal(rows.length, 1);
+      assert.equal(rows[0]!.delta, -2);
+      assert.deepEqual(await movements(infinite.id), []);
+      for (const action of ['PAY', 'ACCEPT', 'READY', 'PICKUP'])
+        assert.equal(await events(o.id, action), 1);
+    });
     for (const autoAccept of [false, true]) {
       await db.orderSettings.update({
         where: { storeId: scope.storeId },
