@@ -71,6 +71,8 @@ Issue #23 锁定现代餐饮 SaaS 风。先交付工作台与完整商品模块�
 
 验收：不花真实钱即可完整模拟从下单到送达。
 
+实现说明见 [PHASE-3.md](PHASE-3.md)，实际浏览器记录见 [PHASE-3-ACCEPTANCE.md](PHASE-3-ACCEPTANCE.md)。使用独立分支提交 Draft PR，当前仍需人工审查和用户确认，不代表已批准进入 Phase 4。
+
 ## Phase 4：微信小程序
 
 - 登录

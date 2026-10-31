@@ -1,6 +1,15 @@
-import { afterEach, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { App } from './App';
+beforeEach(() => {
+  vi.stubGlobal('matchMedia', () => ({
+    matches: false,
+    addListener() {},
+    removeListener() {},
+    addEventListener() {},
+    removeEventListener() {},
+  }));
+});
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
@@ -19,9 +28,9 @@ test('displays server-controlled test mode', async () => {
   );
   render(<App />);
   expect(await screen.findByText('测试模式 · 不产生真实交易')).toBeTruthy();
-  expect(screen.getByRole('heading', { level: 1 }).textContent).toBe(
-    '商家接单工作台',
-  );
+  expect(
+    screen.getByRole('heading', { name: '商家接单工作台' }).textContent,
+  ).toBe('商家接单工作台');
 });
 test('connection failure retries and shows live mode only after server response', async () => {
   const request = vi

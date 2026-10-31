@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { RuntimeInfo } from '@platform/shared';
+import { Terminal } from './Terminal';
 export function App() {
   const [runtime, setRuntime] = useState<RuntimeInfo | null>(null);
   const [error, setError] = useState(false);
@@ -50,12 +51,13 @@ export function App() {
           </button>
         )}
       </header>
-      <section>
-        <h2>待处理订单</h2>
-        <p>接单功能尚未开放。当前页面用于检查工作台连接。</p>
-        <p>断网时无法接单，请恢复网络后重新连接。</p>
-      </section>
-      <footer>工程初始化 · Phase 0</footer>
+      {runtime?.testMode ? (
+        <Terminal />
+      ) : (
+        <section>
+          <p>正式环境不开放模拟接单；请使用授权测试环境。</p>
+        </section>
+      )}
     </main>
   );
 }

@@ -15,6 +15,7 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { DatabaseService } from './infrastructure.js';
+import { Prisma } from '@prisma/client';
 import {
   AdminGuard,
   BrandScope,
@@ -297,19 +298,46 @@ export class CatalogController {
     });
     return this.db.variant.create({ data: { ...r.scope, productId, ...data } });
   }
-  @Patch('variants/:id') @CatalogAccess() editVariant(
+  @Patch('variants/:id') @CatalogAccess() async editVariant(
     @Req() r: AdminRequest,
     @Param('id') value: string,
     @Body() body: unknown,
   ) {
-    return this.db.variant.update({
-      where: {
-        storeId_id: { storeId: r.scope.storeId, id: parse(id, value) },
-        ...r.scope,
-        deletedAt: null,
-        product: { deletedAt: null },
-      },
-      data: parse(variantEdit, body),
+    const variantId = parse(id, value),
+      data = parse(variantEdit, body);
+    return this.db.$transaction(async (tx) => {
+      await tx.$queryRaw(
+        Prisma.sql`SELECT id FROM variants WHERE id = ${variantId}::uuid AND "storeId" = ${r.scope.storeId}::uuid FOR UPDATE`,
+      );
+      const current = await tx.variant.findFirstOrThrow({
+        where: {
+          ...r.scope,
+          id: variantId,
+          deletedAt: null,
+          product: { deletedAt: null },
+        },
+      });
+      if (
+        data.unlimitedStock !== undefined &&
+        data.unlimitedStock !== current.unlimitedStock &&
+        (await tx.orderItem.count({
+          where: {
+            ...r.scope,
+            variantId,
+            order: { reservationStatus: 'HELD' },
+          },
+        }))
+      )
+        throw new ConflictException('此商品仍有待完成订单，暂不能切换库存模式');
+      return tx.variant.update({
+        where: {
+          storeId_id: { storeId: r.scope.storeId, id: parse(id, value) },
+          ...r.scope,
+          deletedAt: null,
+          product: { deletedAt: null },
+        },
+        data,
+      });
     });
   }
   @Delete('variants/:id') @CatalogAccess() archiveVariant(
@@ -347,6 +375,23 @@ export class CatalogController {
         body,
       );
     return this.db.$transaction(async (tx) => {
+      await tx.$queryRaw(
+        Prisma.sql`SELECT id FROM variants WHERE id = ${variantId}::uuid AND "storeId" = ${r.scope.storeId}::uuid FOR UPDATE`,
+      );
+      const current = await tx.variant.findFirst({
+        where: {
+          ...r.scope,
+          id: variantId,
+          deletedAt: null,
+          product: { deletedAt: null },
+        },
+      });
+      if (!current)
+        throw new ConflictException('库存不足、超出范围或规格不存在');
+      if (current.stockQuantity + data.delta < current.reservedQuantity)
+        throw new ConflictException(
+          '库存已被待完成订单预占，不能减少到预占数量以下',
+        );
       const result = await tx.variant.updateMany({
         where: {
           ...r.scope,

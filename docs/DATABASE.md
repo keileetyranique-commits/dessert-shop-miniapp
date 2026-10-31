@@ -358,3 +358,7 @@ Phase 1 在新迁移中加入通用商品、SKU、选项、库存流水、食材
 - scope
 - response_json
 - expires_at
+
+## Phase 3 实际落库说明
+
+以上业务清单是总体设计；Phase 3 的准确字段以 Prisma schema 和新迁移为准。订单使用 Order、OrderItem、OrderEvent、OrderSettings、CheckoutPreview、MockDeliveryQuote；幂等键分别落在订单和事件的唯一约束中，未另建通用幂等表。订单/子项的门店复合外键、不可变成交依据和库存范围约束见 `202610250001_orders`；运行时配送报价引用及门店外键见 `202610250002_order_delivery_recovery`。重新询价不覆盖原成交快照。
