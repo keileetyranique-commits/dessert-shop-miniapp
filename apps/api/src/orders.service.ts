@@ -88,15 +88,35 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
   }
   async sweepExpired() {
     this.assertEnabled();
-    const expired = await this.db.order.findMany({
-      where: {
-        orderStatus: { in: ['PENDING_PAYMENT', 'AWAITING_ACCEPTANCE'] },
-        expiresAt: { lte: new Date() },
-      },
-      orderBy: { expiresAt: 'asc' },
-      take: 100,
-    });
-    for (const order of expired) {
+    // Persist a bounded claim before processing. Other instances skip locked rows;
+    // crashes retry after one minute, without changing the business expiry or ledger.
+    const deadline = Date.now() + 10000;
+    for (
+      let attempted = 0;
+      attempted < 100 && Date.now() < deadline;
+      attempted++
+    ) {
+      const expired = await this.db.$transaction(
+        (tx) =>
+          tx.$queryRaw<
+            Pick<Order, 'id' | 'merchantId' | 'brandId' | 'storeId'>[]
+          >(Prisma.sql`
+      WITH candidates AS (
+        SELECT id FROM orders
+        WHERE "orderStatus" IN ('PENDING_PAYMENT', 'AWAITING_ACCEPTANCE')
+          AND "expiresAt" <= CURRENT_TIMESTAMP
+          AND "timeoutCheckAfter" <= CURRENT_TIMESTAMP
+        ORDER BY "timeoutCheckAfter", "expiresAt", id
+        LIMIT 1 FOR UPDATE SKIP LOCKED
+      )
+      UPDATE orders AS o SET "timeoutCheckAfter" = CURRENT_TIMESTAMP + INTERVAL '1 minute'
+      FROM candidates AS c WHERE o.id = c.id
+      RETURNING o.id, o."merchantId", o."brandId", o."storeId"
+    `),
+        { timeout: 5000 },
+      );
+      const order = expired[0];
+      if (!order) break;
       const scope = {
         merchantId: order.merchantId,
         brandId: order.brandId,

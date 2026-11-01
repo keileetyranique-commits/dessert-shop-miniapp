@@ -655,6 +655,215 @@ test('订单存储：租户复合外键、幂等键、不可变快照与事务�
       for (const action of ['PAY', 'ACCEPT', 'READY', 'PICKUP'])
         assert.equal(await events(o.id, action), 1);
     });
+    await t.test(
+      '超时扫描公平性：100 笔异常、跨店正常单、并发与重启',
+      async () => {
+        const otherCategory = await db.category.create({
+          data: { ...other, name: '超时分类' },
+        });
+        const otherProduct = await db.product.create({
+          data: { ...other, categoryId: otherCategory.id, name: '超时商品' },
+        });
+        const healthyVariant = await db.variant.create({
+          data: {
+            ...other,
+            productId: otherProduct.id,
+            name: '正常预占',
+            salePriceFen: 1000,
+            stockQuantity: 10,
+            reservedQuantity: 4,
+          },
+        });
+        const brokenVariant = await db.variant.create({
+          data: {
+            ...scope,
+            productId: product.id,
+            name: '异常预占',
+            salePriceFen: 1000,
+            stockQuantity: 200,
+            reservedQuantity: 199,
+          },
+        });
+        const brokenIds: string[] = [];
+        const normalIds: string[] = [];
+        // Direct isolated fixtures represent persisted orders, with real immutable items and evidence.
+        for (let i = 0; i < 102; i++) {
+          const broken = i < 100;
+          const s = broken ? scope : other;
+          const v = broken ? brokenVariant : healthyVariant;
+          const o = await db.order.create({
+            data: {
+              ...s,
+              actor: 'timeout-fixture',
+              idempotencyKey: randomUUID(),
+              requestHash: 'fixture',
+              request: {},
+              snapshot: {},
+              fingerprint: 'fixture',
+              mode: 'PICKUP',
+              payableFen: 2000,
+              expiresAt: new Date(1000 + i),
+              evidence: {
+                pricing: {
+                  lines: [
+                    {
+                      quantity: 2,
+                      variant: {
+                        id: v.id,
+                        productId: v.productId,
+                        unlimitedStock: false,
+                      },
+                    },
+                  ],
+                },
+              },
+            },
+          });
+          await db.orderItem.create({
+            data: {
+              ...s,
+              orderId: o.id,
+              variantId: v.id,
+              quantity: 2,
+              finiteStock: true,
+              snapshot: {},
+            },
+          });
+          (broken ? brokenIds : normalIds).push(o.id);
+        }
+        const itemsBefore = await db.orderItem.findMany({
+          where: { orderId: { in: brokenIds } },
+          orderBy: { id: 'asc' },
+        });
+        const ordersBefore = await db.order.findMany({
+          where: { id: { in: brokenIds } },
+          orderBy: { id: 'asc' },
+        });
+        // Simulate a process stopping after persisting a claim but before EXPIRE.
+        await db.order.update({
+          where: { id: normalIds[1]! },
+          data: { timeoutCheckAfter: new Date(Date.now() + 60000) },
+        });
+        await service.sweepExpired();
+        assert.equal(
+          await db.order.count({
+            where: { id: { in: normalIds }, orderStatus: 'PENDING_PAYMENT' },
+          }),
+          2,
+        );
+        const restarted = new OrdersService(db as DatabaseService, config);
+        await Promise.all([restarted.sweepExpired(), service.sweepExpired()]);
+        await restarted.sweepExpired();
+        assert.equal(
+          (await db.order.findUniqueOrThrow({ where: { id: normalIds[1]! } }))
+            .orderStatus,
+          'PENDING_PAYMENT',
+        );
+        assert.equal(
+          (
+            await db.variant.findUniqueOrThrow({
+              where: { id: healthyVariant.id },
+            })
+          ).reservedQuantity,
+          2,
+        );
+        // Expired claim is retried by a fresh service, without changing expiresAt.
+        await db.order.update({
+          where: { id: normalIds[1]! },
+          data: { timeoutCheckAfter: new Date(0) },
+        });
+        await new OrdersService(db as DatabaseService, config).sweepExpired();
+        for (const id of normalIds) {
+          const o = await db.order.findUniqueOrThrow({ where: { id } });
+          assert.equal(o.orderStatus, 'CANCELLED');
+          assert.equal(o.paymentStatus, 'UNPAID');
+          assert.equal(o.reservationStatus, 'RELEASED');
+          assert.equal(await events(id, 'EXPIRE'), 1);
+        }
+        const healthy = await db.variant.findUniqueOrThrow({
+          where: { id: healthyVariant.id },
+        });
+        assert.equal(healthy.stockQuantity, 10);
+        assert.equal(healthy.reservedQuantity, 0);
+        assert.equal(
+          await db.inventoryMovement.count({
+            where: { variantId: healthy.id },
+          }),
+          0,
+        );
+        assert.deepEqual(
+          await db.orderItem.findMany({
+            where: { orderId: { in: brokenIds } },
+            orderBy: { id: 'asc' },
+          }),
+          itemsBefore,
+        );
+        const after = await db.order.findMany({
+          where: { id: { in: brokenIds } },
+          orderBy: { id: 'asc' },
+        });
+        for (let i = 0; i < after.length; i++) {
+          assert.equal(after[i]!.orderStatus, 'PENDING_PAYMENT');
+          assert.equal(after[i]!.paymentStatus, 'UNPAID');
+          assert.equal(after[i]!.reservationStatus, 'HELD');
+          assert.deepEqual(after[i]!.expiresAt, ordersBefore[i]!.expiresAt);
+          assert.deepEqual(after[i]!.evidence, ordersBefore[i]!.evidence);
+          assert.equal(await events(after[i]!.id, 'EXPIRE'), 0);
+        }
+        // Advance only scheduling metadata to simulate lease expiry, not business expiry.
+        await db.order.updateMany({
+          where: { id: { in: brokenIds } },
+          data: { timeoutCheckAfter: new Date(0) },
+        });
+        await Promise.all([
+          service.sweepExpired(),
+          new OrdersService(db as DatabaseService, config).sweepExpired(),
+        ]);
+        for (const id of brokenIds)
+          assert.equal(await events(id, 'RESERVATION_BLOCKED'), 1);
+        const damaged = await db.variant.findUniqueOrThrow({
+          where: { id: brokenVariant.id },
+        });
+        assert.equal(damaged.stockQuantity, 200);
+        assert.equal(damaged.reservedQuantity, 199);
+        assert.equal(
+          await db.inventoryMovement.count({
+            where: { variantId: damaged.id },
+          }),
+          0,
+        );
+        const ledger = await db.orderItem.aggregate({
+          where: {
+            variantId: damaged.id,
+            order: { reservationStatus: 'HELD' },
+          },
+          _sum: { quantity: true },
+        });
+        assert.equal(ledger._sum.quantity, 200);
+        // Reconciled repair plus expired claims must recover after another service restart.
+        await db.variant.update({
+          where: { id: damaged.id },
+          data: { reservedQuantity: 200 },
+        });
+        await db.order.updateMany({
+          where: { id: { in: brokenIds } },
+          data: { timeoutCheckAfter: new Date(0) },
+        });
+        await new OrdersService(db as DatabaseService, config).sweepExpired();
+        assert.equal(
+          await db.order.count({
+            where: { id: { in: brokenIds }, orderStatus: 'CANCELLED' },
+          }),
+          100,
+        );
+        assert.equal(
+          (await db.variant.findUniqueOrThrow({ where: { id: damaged.id } }))
+            .reservedQuantity,
+          0,
+        );
+        for (const id of brokenIds) assert.equal(await events(id, 'EXPIRE'), 1);
+      },
+    );
     for (const autoAccept of [false, true]) {
       await db.orderSettings.update({
         where: { storeId: scope.storeId },
