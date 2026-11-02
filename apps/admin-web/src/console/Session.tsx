@@ -18,6 +18,7 @@ interface Access extends Session {
   logout: (expired?: boolean) => void;
   selectStore: (id: string) => void;
   addStore: (store: Store) => void;
+  updateStore: (store: Store) => void;
 }
 const Context = createContext<Access | null>(null);
 export function useSession() {
@@ -114,6 +115,16 @@ export function SessionProvider({ children }: { children: ReactNode }) {
               s && {
                 ...s,
                 storeId: s.stores.some((x) => x.id === id) ? id : '',
+              },
+          ),
+        updateStore: (store) =>
+          setSession(
+            (s) =>
+              s && {
+                ...s,
+                stores: s.stores.map((old) =>
+                  old.id === store.id ? store : old,
+                ),
               },
           ),
         addStore: (store) =>
