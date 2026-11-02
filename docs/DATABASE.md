@@ -362,3 +362,7 @@ Phase 1 在新迁移中加入通用商品、SKU、选项、库存流水、食材
 ## Phase 3 实际落库说明
 
 以上业务清单是总体设计；Phase 3 的准确字段以 Prisma schema 和新迁移为准。订单使用 Order、OrderItem、OrderEvent、OrderSettings、CheckoutPreview、MockDeliveryQuote；幂等键分别落在订单和事件的唯一约束中，未另建通用幂等表。订单/子项的门店复合外键、不可变成交依据和库存范围约束见 `202610250001_orders`；运行时配送报价引用及门店外键见 `202610250002_order_delivery_recovery`。重新询价不覆盖原成交快照。
+
+## 库存工作台实际落库（2026-11）
+
+新增 Variant.lowStockThreshold（null 与 0 区别）、soldOutReason、可空 inventoryUpdatedAt；InventoryMovement.type/idempotencyKey/requestHash/before/after/orderId，门店规格人员幂等唯一约束、租户时间索引及门店订单外键。更新时间由数据库触发器覆盖原订单 SQL 路径，旧时间未知保留 NULL。第一版迁移已执行，修正历史分类用追加迁移 `202611020001_inventory_history_verification`，不改旧 SQL、不改库存数量。细节与历史依据限制见 [库存工作台](INVENTORY-CONSOLE.md)。

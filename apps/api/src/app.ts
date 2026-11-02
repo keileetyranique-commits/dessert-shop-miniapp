@@ -1,4 +1,5 @@
 import 'reflect-metadata';
+import { InventoryController } from './inventory.controller.js';
 import { MediaController } from './media.controller.js';
 import { STORAGE, LocalStorage } from './storage.js';
 import { AdminGuard } from './auth.js';
@@ -55,6 +56,7 @@ export class AppModule {
       controllers: [
         AppController,
         CatalogController,
+        InventoryController,
         CostController,
         PricingController,
         MediaController,

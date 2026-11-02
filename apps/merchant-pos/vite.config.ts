@@ -42,5 +42,5 @@ export default defineConfig({
       },
     },
   },
-  test: { environment: 'jsdom', restoreMocks: true },
+  test: { environment: 'jsdom', restoreMocks: true, maxWorkers: 1 },
 });

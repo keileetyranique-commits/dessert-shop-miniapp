@@ -13,5 +13,10 @@ export default defineConfig({
     },
   },
   // Bound concurrent jsdom/Ant Design instances on development machines and CI.
-  test: { environment: 'jsdom', restoreMocks: true, maxWorkers: 2 },
+  test: {
+    environment: 'jsdom',
+    restoreMocks: true,
+    maxWorkers: 1,
+    testTimeout: 30000,
+  },
 });
