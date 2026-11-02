@@ -66,3 +66,7 @@ docker compose --env-file runtime.env up -d --no-build --pull never --wait
 ## 本轮冻结依赖安装注意事项
 
 飞牛共享目录继承 ACL 可能使默认工作区 pnpm store 文件权限变为 000，导致 esbuild EACCES。开发容器非交互安装使用 `CI=true pnpm install --frozen-lockfile --store-dir /tmp/inventory-pnpm-store --package-import-method=copy`，保持依赖存储在开发容器中；首次需要完整联网下载，不能假定旧镜像包含冻结锁文件的全部依赖。浏览器验收工具仅安装于容器临时目录，不进入项目依赖。
+
+## 2026-11-03 当前状态更正
+
+上文“未提交、库存尚待验收”是迁移时历史记录，已由 PR #28 交付替代。库存代码已提交并部署，完整回归与浏览器验收见 INVENTORY-CONSOLE.md；当前接管事实见 NAS-PROJECT-HANDOVER.md。GitHub CLI 已由用户在 NAS 完成认证，凭据只在仓库外，不读取或输出认证文件。后续模块仍需各自验收，不能沿用库存的测试结论。
