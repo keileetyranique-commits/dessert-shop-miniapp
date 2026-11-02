@@ -154,3 +154,7 @@ Phase 1 商品、门店与成本 API 的实际路径、鉴权及字段约定见 
 Phase 1 审查修复：成本 GET 仅预览，显式 POST `/admin/costs/variants/:id/cost/snapshots` 保存快照；新增受成本权限保护的 Modifier 成本接口和 `DELETE /admin/variants/:id` 归档。完整权限及参数见 [Phase 1](PHASE-1.md)。
 
 Phase 3 新增受服务端测试模式与门店权限共同保护的订单、结算、模拟付款/配送和故障恢复接口，完整路由与角色矩阵见 [Phase 3](PHASE-3.md)。顾客结算投影不返回内部成本、利润与采购依据；不能用管理端定价模拟接口替代结算。
+
+## 商家库存工作台（2026-11）
+
+新增 GET `/admin/inventory`、GET `/admin/inventory/movements`、PATCH `/admin/inventory/variants/:id`，复用 POST `/admin/variants/:id/stock`。真实库存接口独立于 Mock 订单，在生产配置同样校验角色和 Merchant→Brand→Store。完整查询参数、边界、幂等范围和权限见 [库存工作台](INVENTORY-CONSOLE.md)。文档上方未实现的设计路径不代表已开放；完整实际状态见 [产品需求状态表](PRODUCT-REQUIREMENTS-MAP.md)。
