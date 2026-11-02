@@ -56,3 +56,9 @@ state：NORMAL/LOW/EMPTY/PAUSED/INACTIVE/SAFETY/ARCHIVED；mode：finite/unlimit
 ![桌面库存](screenshots/inventory/desktop-stock.png)
 ![小屏保存失败](screenshots/inventory/mobile-error.png)
 ![小屏历史流水](screenshots/inventory/mobile-history.png)
+
+## 最终回归（2026-11-03 汇总）
+
+飞牛独立测试环境冻结依赖安装、Prisma generate、format、lint、format:check、typecheck、125 项单元/前端测试、build、连续两次 migrate deploy、24 项 integration 全部通过，无跳过。构建保留既有后台/POS 大包提示。仓库没有 `pnpm db` 脚本，使用仓库规定的 db:generate/db:migrate；未新增含糊别名。
+
+代码提交 `ad182a8`，文档提交 `4326df7`；Draft PR #28 的 checks 与 compose 均通过，运行记录：https://github.com/keileetyranique-commits/dessert-shop-miniapp/actions/runs/41402900983 。运行数据库更新前已在仓库外保存一致性备份；最终运行 smoke 结果以 PR 描述为准。所有功能保持人工待审，不合并。
