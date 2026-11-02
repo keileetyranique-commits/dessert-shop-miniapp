@@ -42,3 +42,7 @@
 继续复用 Ant Design 6.3.3（MIT）的 Table/Form/Modal/Select/InputNumber/Tabs/Alert/Tag、C 版布局与响应式样式、既有身份/门店/安全请求客户端和人民币格式化。antd-admin、Ant Design Pro（MIT）仅沿用已核验清单中的分页筛选/确认表单模式，未复制第三方源码；未增加项目依赖或常驻服务。完整成熟框架迁移会破坏现有 C 风格和 API 契约，收益不足。
 
 本项目库存查询、设置与审计组合自行实现，原因是 Merchant→Brand→Store、真实订单预占和锁顺序必须与现有事务保持一致；复用原 stock 行锁/事务/整数边界，未引入外部库存后端，也不重写订单账本或成本定价。新订单完成仅增流水元数据与快照，数量规则不变。浏览器验收使用临时目录的 Playwright/Chromium，不进入 package.json/锁文件或部署依赖；后台/POS 既有大包提示仍需如实记录。
+
+# 门店资料续建（2026-11-03）
+
+复用现有 Ant Design 6.3.3（MIT）Form/Input/Collapse/Alert/Button 和 C 布局，沿用既有门店读写 API、角色和租户鉴权。候选 Ant Design Pro/antd-admin（MIT）仅参考已有分层表单模式，不复制新第三方源码，不添加依赖。按当前 API 契约组合页面，以减少框架迁移成本；不改变订单、成本和库存核心规则。
