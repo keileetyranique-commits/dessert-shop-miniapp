@@ -158,6 +158,12 @@ export async function settleInventory(
     a.variantId.localeCompare(b.variantId),
   )) {
     if (!item.finiteStock) continue;
+    const before = consume
+      ? await tx.variant.findFirstOrThrow({
+          where: { ...scope, id: item.variantId },
+          select: { stockQuantity: true, reservedQuantity: true },
+        })
+      : undefined;
     const changed = await tx.$executeRaw(Prisma.sql`
       UPDATE variants SET "reservedQuantity" = "reservedQuantity" - ${item.quantity},
         "stockQuantity" = "stockQuantity" - ${consume ? item.quantity : 0}
@@ -175,6 +181,15 @@ export async function settleInventory(
           variantId: item.variantId,
           delta: -item.quantity,
           reason: `测试订单完成：${orderId}`,
+          before,
+          after: before
+            ? {
+                stockQuantity: before.stockQuantity - item.quantity,
+                reservedQuantity: before.reservedQuantity - item.quantity,
+              }
+            : undefined,
+          type: 'ORDER_COMPLETED',
+          orderId,
           actor,
         },
       });

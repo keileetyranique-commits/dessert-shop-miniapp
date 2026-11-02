@@ -30,6 +30,7 @@ import {
 import { StoreGate } from './Data';
 import { Dashboard } from './Dashboard';
 import { Products } from './Products';
+import { Inventory } from './Inventory';
 import { Pricing } from './Pricing';
 import { CostSetup } from './CostSetup';
 import { Orders } from './Orders';
@@ -127,6 +128,7 @@ function Shell() {
             <Routes>
               <Route path="/admin" element={<Dashboard />} />
               <Route path="/admin/products" element={<Products />} />
+              <Route path="/admin/inventory" element={<Inventory />} />
               <Route path="/admin/orders" element={<Orders />} />
               <Route path="/admin/order-test" element={<OrderTestCenter />} />
               <Route path="/admin/analysis" element={<Pricing />} />
@@ -137,6 +139,7 @@ function Shell() {
                     ![
                       '',
                       'products',
+                      'inventory',
                       'orders',
                       'order-test',
                       'analysis',

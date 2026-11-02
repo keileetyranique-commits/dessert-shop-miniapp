@@ -1,3 +1,4 @@
+import { adjustStock, inventorySnapshot } from './inventory-write.js';
 import {
   Body,
   Controller,
@@ -26,7 +27,6 @@ import { DbErrorFilter } from './db-error.filter.js';
 import {
   parse,
   id,
-  z,
   storeInput,
   categoryInput,
   productInput,
@@ -329,15 +329,43 @@ export class CatalogController {
         }))
       )
         throw new ConflictException('此商品仍有待完成订单，暂不能切换库存模式');
-      return tx.variant.update({
+      const after = await tx.variant.update({
         where: {
           storeId_id: { storeId: r.scope.storeId, id: parse(id, value) },
           ...r.scope,
           deletedAt: null,
           product: { deletedAt: null },
         },
-        data,
+        data: {
+          ...data,
+          ...(data.soldOut === undefined
+            ? {}
+            : { soldOutReason: data.soldOut ? '商品编辑中标记售罄' : '' }),
+        },
       });
+      if (
+        after.soldOut !== current.soldOut ||
+        after.unlimitedStock !== current.unlimitedStock
+      )
+        await tx.inventoryMovement.create({
+          data: {
+            ...r.scope,
+            variantId,
+            delta: 0,
+            type: 'SETTINGS',
+            actor: r.identity.id,
+            reason: '商品编辑：更新售罄或库存模式',
+            before: {
+              ...inventorySnapshot(current),
+              unlimitedStock: current.unlimitedStock,
+            },
+            after: {
+              ...inventorySnapshot(after),
+              unlimitedStock: after.unlimitedStock,
+            },
+          },
+        });
+      return after;
     });
   }
   @Delete('variants/:id') @CatalogAccess() archiveVariant(
@@ -359,61 +387,7 @@ export class CatalogController {
     @Param('id') value: string,
     @Body() body: unknown,
   ) {
-    const variantId = parse(id, value),
-      data = parse(
-        z
-          .object({
-            delta: z
-              .number()
-              .int()
-              .min(-2147483647)
-              .max(2147483647)
-              .refine((v) => v !== 0),
-            reason: z.string().trim().min(1).max(500),
-          })
-          .strict(),
-        body,
-      );
-    return this.db.$transaction(async (tx) => {
-      await tx.$queryRaw(
-        Prisma.sql`SELECT id FROM variants WHERE id = ${variantId}::uuid AND "storeId" = ${r.scope.storeId}::uuid FOR UPDATE`,
-      );
-      const current = await tx.variant.findFirst({
-        where: {
-          ...r.scope,
-          id: variantId,
-          deletedAt: null,
-          product: { deletedAt: null },
-        },
-      });
-      if (!current)
-        throw new ConflictException('库存不足、超出范围或规格不存在');
-      if (current.stockQuantity + data.delta < current.reservedQuantity)
-        throw new ConflictException(
-          '库存已被待完成订单预占，不能减少到预占数量以下',
-        );
-      const result = await tx.variant.updateMany({
-        where: {
-          ...r.scope,
-          id: variantId,
-          deletedAt: null,
-          product: { deletedAt: null },
-          stockQuantity:
-            data.delta < 0
-              ? { gte: -data.delta }
-              : { lte: 2147483647 - data.delta },
-        },
-        data: { stockQuantity: { increment: data.delta } },
-      });
-      if (result.count !== 1)
-        throw new ConflictException('库存不足、超出范围或 SKU 不存在');
-      await tx.inventoryMovement.create({
-        data: { ...r.scope, variantId, ...data, actor: r.identity.id },
-      });
-      return tx.variant.findFirstOrThrow({
-        where: { ...r.scope, id: variantId },
-      });
-    });
+    return adjustStock(this.db, r, value, body);
   }
   @Post('products/:id/modifier-groups') @CatalogAccess() async group(
     @Req() r: AdminRequest,

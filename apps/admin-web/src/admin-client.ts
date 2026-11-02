@@ -44,7 +44,7 @@ export function createClient(
               : '请求未能完成，请检查输入或刷新后重试';
       // Only known, public order messages may cross the error boundary.
       if (
-        /^\/(orders|order-test)(\/|$)/.test(path) &&
+        /^\/(orders|order-test|inventory|variants)(\/|$)/.test(path) &&
         [403, 409].includes(response.status)
       ) {
         try {
@@ -73,6 +73,13 @@ export function createClient(
 }
 
 const orderMessages = new Set([
+  '库存不足、超出范围或规格不存在',
+  '库存已被待完成订单预占，不能减少到预占数量以下',
+  '不限库存的规格无需调整数量',
+  '不限库存的规格无需设置数量预警',
+  '商品已下架或因安全原因停售，请先核对商品资料',
+  '此操作已提交，请勿更改内容后重复发送',
+  '仅老板可设置库存预警',
   '库存预占异常，请联系老板核对',
   '商品因安全原因暂停履约，请老板核对或终止模拟退款',
   '履约商品已归档，请老板核对或终止模拟退款',

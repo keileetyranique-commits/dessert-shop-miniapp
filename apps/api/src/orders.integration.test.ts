@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { randomUUID, randomBytes } from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
 import { parseConfig } from './config.js';
+import { adjustStock } from './inventory-write.js';
 import { reserveInventory, settleInventory } from './order-inventory.js';
 import { readCheckout, defaultCheckoutTerms } from './checkout-reader.js';
 import { OrdersService } from './orders.service.js';
@@ -497,6 +498,58 @@ test('订单存储：租户复合外键、幂等键、不可变快照与事务�
       db.orderEvent.count({ where: { orderId, action } });
     const movements = (variantId: string) =>
       db.inventoryMovement.findMany({ where: { ...scope, variantId } });
+    await t.test(
+      '库存工作台调整保护真实订单预占并与付款并发，失败不写流水',
+      async () => {
+        const o = await pending([finite.id]);
+        const beforeCount = await db.inventoryMovement.count({
+          where: { ...scope, variantId: finite.id },
+        });
+        await assert.rejects(
+          adjustStock(db as DatabaseService, caller, finite.id, {
+            delta: -9,
+            reason: '错误盘点',
+            idempotencyKey: randomUUID(),
+          }),
+          /预占/,
+        );
+        await stockIs(finite.id, 10, 2);
+        assert.equal(
+          await db.inventoryMovement.count({
+            where: { ...scope, variantId: finite.id },
+          }),
+          beforeCount,
+        );
+        const body = {
+          delta: 1,
+          reason: '订单付款时补货',
+          idempotencyKey: randomUUID(),
+        };
+        await Promise.all([
+          service.action(caller, o.id, 'PAY', 'inventory-race-pay'),
+          adjustStock(db as DatabaseService, caller, finite.id, body),
+          adjustStock(db as DatabaseService, caller, finite.id, body),
+        ]);
+        await stockIs(finite.id, 11, 2);
+        assert.equal(
+          await db.inventoryMovement.count({
+            where: { ...scope, variantId: finite.id },
+          }),
+          beforeCount + 1,
+        );
+        await service.action(caller, o.id, 'CANCEL', 'inventory-race-cancel');
+        await stockIs(finite.id, 11, 0);
+        await adjustStock(db as DatabaseService, caller, finite.id, {
+          delta: -1,
+          reason: '盘点恢复',
+        });
+        await stockIs(finite.id, 10, 0);
+        // This test's independent adjustment records are removed, preserving later exact movement assertions.
+        await db.inventoryMovement.deleteMany({
+          where: { ...scope, variantId: finite.id, type: 'ADJUSTMENT' },
+        });
+      },
+    );
     await t.test('同规格两订单库存充足时并发付款：自动及手动接单', async () => {
       for (const autoAccept of [false, true]) {
         await db.orderSettings.update({
@@ -651,6 +704,21 @@ test('订单存储：租户复合外键、幂等键、不可变快照与事务�
       const rows = await movements(finite.id);
       assert.equal(rows.length, 1);
       assert.equal(rows[0]!.delta, -2);
+      assert.equal(rows[0]!.type, 'ORDER_COMPLETED');
+      assert.equal(rows[0]!.orderId, o.id);
+      assert.equal(rows[0]!.actor, caller.identity.id);
+      assert.equal(
+        (rows[0]!.before as { stockQuantity: number }).stockQuantity,
+        10,
+      );
+      assert.equal(
+        (rows[0]!.after as { stockQuantity: number }).stockQuantity,
+        8,
+      );
+      assert.equal(
+        (rows[0]!.after as { reservedQuantity: number }).reservedQuantity,
+        0,
+      );
       assert.deepEqual(await movements(infinite.id), []);
       for (const action of ['PAY', 'ACCEPT', 'READY', 'PICKUP'])
         assert.equal(await events(o.id, action), 1);

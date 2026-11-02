@@ -717,3 +717,32 @@ a:focus-visible {
     grid-template-columns: 1fr;
   }
 }
+
+.inventory-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+  margin: 20px 0;
+}
+.inventory-panel {
+  min-width: 0;
+}
+.inventory-panel .filters > * {
+  min-width: 150px;
+  flex: 1;
+}
+.inventory-panel .filters > input {
+  max-width: 240px;
+}
+
+@media (max-width: 760px) {
+  .topbar .actions {
+    width: 100%;
+    min-width: 0;
+    flex-wrap: wrap;
+  }
+  .topbar .store-select {
+    max-width: 100%;
+    min-width: 0;
+  }
+}

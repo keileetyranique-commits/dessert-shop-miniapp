@@ -58,6 +58,7 @@ model CheckoutPreview {
 }
 
 model Order {
+  inventoryMovements InventoryMovement[]
   id                String       @id @default(uuid()) @db.Uuid
   merchantId        String       @db.Uuid
   brandId           String       @db.Uuid
@@ -267,6 +268,9 @@ model Product {
 }
 
 model Variant {
+  inventoryUpdatedAt DateTime? @db.Timestamptz(3)
+  lowStockThreshold Int?
+  soldOutReason String @default("")
   id                            String                   @id @default(uuid()) @db.Uuid
   merchantId                    String                   @db.Uuid
   brandId                       String                   @db.Uuid
@@ -335,6 +339,13 @@ model Modifier {
 }
 
 model InventoryMovement {
+  type String @default("ADJUSTMENT")
+  idempotencyKey String?
+  requestHash String?
+  before Json?
+  after Json?
+  orderId String? @db.Uuid
+  order Order? @relation(fields: [storeId, orderId], references: [storeId, id], onDelete: Restrict)
   id         String   @id @default(uuid()) @db.Uuid
   merchantId String   @db.Uuid
   brandId    String   @db.Uuid
@@ -350,6 +361,8 @@ model InventoryMovement {
   @@unique([storeId, id])
   @@index([merchantId, brandId, storeId])
   @@map("inventory_movements")
+  @@unique([storeId, variantId, actor, idempotencyKey])
+  @@index([merchantId, brandId, storeId, createdAt, id])
 }
 
 model Ingredient {
